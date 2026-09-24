@@ -29,6 +29,9 @@ dependencies = [
 wireup = [
     "wireup>=2.12",
 ]
+trio = [
+    "cyclopts[trio]>=5.0,<6",
+]
 
 [dependency-groups]
 dev = [
@@ -63,6 +66,14 @@ reportUnnecessaryTypeIgnoreComment = "error"
 reportUnusedVariable = "error"
 reportMissingParameterType = "error"
 reportPrivateUsage = "error"
+
+# "Any signature" has one spelling a type checker accepts: *args: Any,
+# **kwargs: Any. The protocol holding a command class to returning an int
+# needs it; scoped here only.
+[[tool.basedpyright.executionEnvironments]]
+root = "src/xtr_console/command/command_callable.py"
+reportAny = "none"
+reportExplicitAny = "none"
 
 # ─────────────────────────────────────────────────────────────────
 # ruff — select = ["ALL"], minimal justified ignores
@@ -100,6 +111,9 @@ unfixable = []
 # wireup registers a command class under its constructor annotations, read at
 # runtime. Deferring them would register the class with nothing to resolve.
 "src/xtr_console/integration/wireup.py" = ["TC001", "TC002", "TC003"]
+# *args: Any, **kwargs: Any is how a protocol says "any signature"; see the
+# basedpyright execution environment for the same file.
+"src/xtr_console/command/command_callable.py" = ["ANN401"]
 "tests/unit/integration/test_wireup.py" = ["TC001", "TC002", "TC003"]
 "tests/**/*.py" = [
     "S101",    # assert is the point of pytest
