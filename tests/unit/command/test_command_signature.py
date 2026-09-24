@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import typing
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -39,13 +40,15 @@ def signature_of(target: object) -> CommandSignature:
 
 async def mixed(
     email: str, db: InjectedSession, io: ConsoleStyle, count: int = 1, *, admin: bool = False
-) -> None:
+) -> int:
     del email, db, io, count, admin
+    return 0
 
 
 class ClassCommand:
-    def __call__(self, path: str, *, dry_run: bool = False) -> None:
+    def __call__(self, path: str, *, dry_run: bool = False) -> int:
         del path, dry_run
+        return 0
 
 
 def test_the_command_line_sees_neither_the_style_nor_what_a_container_fills() -> None:
@@ -89,8 +92,9 @@ def test_a_class_command_is_described_by_its_call_without_self() -> None:
 
 
 def test_an_annotation_naming_nothing_is_refused() -> None:
-    def command(value: str) -> None:
+    def command(value: str) -> int:
         del value
+        return 0
 
     command.__annotations__ = {"value": "Undefined"}
 
@@ -99,24 +103,27 @@ def test_an_annotation_naming_nothing_is_refused() -> None:
 
 
 def test_a_positional_only_container_parameter_is_refused() -> None:
-    def command(db: InjectedSession, /) -> None:
+    def command(db: InjectedSession, /) -> int:
         del db
+        return 0
 
     with pytest.raises(CommandSignatureError, match="passable by keyword"):
         _ = signature_of(command)
 
 
 def test_a_container_parameter_before_star_args_is_refused() -> None:
-    def command(db: InjectedSession, *names: str) -> None:
+    def command(db: InjectedSession, *names: str) -> int:
         del db, names
+        return 0
 
     with pytest.raises(CommandSignatureError, match="passable by keyword"):
         _ = signature_of(command)
 
 
 def test_a_keyword_only_container_parameter_after_star_args_is_accepted() -> None:
-    def command(*names: str, db: InjectedSession) -> None:
+    def command(*names: str, db: InjectedSession) -> int:
         del names, db
+        return 0
 
     assert signature_of(command).injected == ("db",)
 
@@ -141,8 +148,9 @@ def test_defaults_are_filled_in_for_what_the_command_line_omitted() -> None:
 
 
 def test_star_args_keep_the_arguments_before_them_positional() -> None:
-    def command(first: str, *rest: str, io: ConsoleStyle) -> None:
+    def command(first: str, *rest: str, io: ConsoleStyle) -> int:
         del first, rest, io
+        return 0
 
     signature = signature_of(command)
     style = ConsoleStyle()
@@ -151,6 +159,63 @@ def test_star_args_keep_the_arguments_before_them_positional() -> None:
 
     assert arguments.args == ("a", "b", "c")
     assert arguments.kwargs == {"io": style}
+
+
+def test_a_static_call_keeps_its_first_parameter() -> None:
+    @final
+    class Static:
+        @staticmethod
+        def __call__(path: str, *, force: bool = False) -> int:
+            del path, force
+            return 0
+
+    assert list(signature_of(Static).callable_signature.parameters) == ["path", "force"]
+
+
+def test_a_class_call_drops_the_class() -> None:
+    @final
+    class ClassBound:
+        @classmethod
+        def __call__(cls, path: str) -> int:
+            del cls, path
+            return 0
+
+    assert list(signature_of(ClassBound).callable_signature.parameters) == ["path"]
+
+
+def test_an_optional_style_is_still_the_style() -> None:
+    def command(name: str, io: ConsoleStyle | None = None) -> int:
+        del name, io
+        return 0
+
+    signature = signature_of(command)
+
+    assert (signature.styled, list(signature.command_line.parameters)) == (("io",), ["name"])
+
+
+def test_a_typing_optional_style_is_still_the_style() -> None:
+    def command(io: object = None) -> int:
+        del io
+        return 0
+
+    # Optional[...] has its own origin before Python 3.14; spelled as a string
+    # so the deprecated name is evaluated, not imported.
+    command.__annotations__ = {"io": "typing.Optional[ConsoleStyle]", "return": "int"}
+    signature = signature_of(command)
+
+    annotation = cast("object", signature.callable_signature.parameters["io"].annotation)
+    assert typing.get_origin(annotation) is not None
+    assert signature.styled == ("io",)
+
+
+def test_an_optional_container_parameter_is_still_the_containers() -> None:
+    def command(name: str, db: InjectedSession | None = None) -> int:
+        del name, db
+        return 0
+
+    signature = signature_of(command)
+
+    assert (signature.injected, list(signature.command_line.parameters)) == (("db",), ["name"])
 
 
 # ─── on the command line ─────────────────────────────────────────
@@ -168,13 +233,15 @@ class Color(Enum):
 
 
 @as_command("args", registry=PARSED)
-def arguments_command(source: Path, target: Path | None = None, *, count: int = 1) -> None:
+def arguments_command(source: Path, target: Path | None = None, *, count: int = 1) -> int:
     received.update(source=source, target=target, count=count)
+    return 0
 
 
 @as_command("variadic", registry=PARSED)
-def variadic_command(*files: Path) -> None:
+def variadic_command(*files: Path) -> int:
     received.update(files=files)
+    return 0
 
 
 @as_command("options", registry=PARSED)
@@ -193,7 +260,7 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
     region: Annotated[str, Parameter(env_var="ACME_REGION")] = "",
     retries: Annotated[int, Parameter(validator=validators.Number(gte=1, lte=5))] = 3,
     note: Annotated[str, Parameter(help="A note, from Parameter.")] = "",
-) -> None:
+) -> int:
     received.update(
         name=name,
         ratio=ratio,
@@ -209,13 +276,15 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
         retries=retries,
         note=note,
     )
+    return 0
 
 
 @as_command("class", registry=PARSED)
 @final
 class ClassOptionsCommand:
-    def __call__(self, path: Path, *, size: Annotated[int, Parameter(alias="-n")] = 2) -> None:
+    def __call__(self, path: Path, *, size: Annotated[int, Parameter(alias="-n")] = 2) -> int:
         received.update(path=path, size=size)
+        return 0
 
 
 @pytest.fixture
@@ -401,3 +470,51 @@ async def test_help_describes_every_option(parser: ApplicationTester, shown: str
     _ = await parse(parser, "options", "--help")
 
     assert shown in parser.display
+
+
+# ─── what a command returns ──────────────────────────────────────
+
+
+@pytest.mark.parametrize("returned", ["", "-> None", "-> str", "-> bool", "-> int | None"])
+def test_a_command_not_annotated_to_return_an_int_is_refused(returned: str) -> None:
+    namespace: dict[str, object] = {}
+    exec(f"def command(){returned}:\n    return 0", namespace)  # noqa: S102 — each annotation under test.
+
+    with pytest.raises(CommandSignatureError, match="must be annotated to return an int"):
+        _ = signature_of(namespace["command"])
+
+
+def test_a_command_annotated_to_return_an_exit_code_is_accepted() -> None:
+    async def command() -> ExitCode:
+        return ExitCode.SUCCESS
+
+    assert signature_of(command).injected == ()
+
+
+def test_a_class_whose_call_returns_nothing_is_refused() -> None:
+    @final
+    class Command:
+        def __call__(self) -> None: ...
+
+    with pytest.raises(CommandSignatureError, match="must be annotated to return an int"):
+        _ = signature_of(Command)
+
+
+# ─── --help ──────────────────────────────────────────────────────
+
+
+def test_a_parameter_named_help_is_refused() -> None:
+    def command(*, help: str = "") -> int:  # noqa: A002 — the name under test.
+        del help
+        return 0
+
+    with pytest.raises(CommandSignatureError, match="would take --help over"):
+        _ = signature_of(command)
+
+
+def test_a_parameter_named_help_but_renamed_is_accepted() -> None:
+    def command(*, help: Annotated[str, Parameter(name="--topic")] = "") -> int:  # noqa: A002
+        del help
+        return 0
+
+    assert list(signature_of(command).command_line.parameters) == ["help"]

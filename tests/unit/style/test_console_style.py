@@ -12,6 +12,7 @@ from xtr_console import (
     CommandsLocator,
     ConsoleStyle,
     ExitCode,
+    InvalidDefaultError,
     as_command,
 )
 
@@ -132,7 +133,7 @@ def test_ask_hidden_returns_the_answer() -> None:
     assert Terminal(["s3cret"]).style.ask_hidden("Password?") == "s3cret"
 
 
-@pytest.mark.parametrize(("answer", "expected"), [("y", True), ("n", False), ("", True)])
+@pytest.mark.parametrize(("answer", "expected"), [("y", True), ("n", False), ("", False)])
 def test_confirm_reads_yes_or_no(answer: str, expected: bool) -> None:
     assert Terminal([answer]).style.confirm("Continue?") is expected
 
@@ -244,3 +245,87 @@ async def test_empty_answers_fall_back_to_the_defaults(reporter: ApplicationTest
     _ = await reporter.execute(["report"], inputs=["", "", "", ""])
 
     assert "name=the team role=user token= send=False" in reporter.display
+
+
+# ─── text that is not valid markup ───────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("write", "text"),
+    [
+        (ConsoleStyle.text, "closing [/] tag"),
+        (ConsoleStyle.title, "Report [/x]"),
+        (ConsoleStyle.section, "stray [/bold]"),
+        (ConsoleStyle.success, "saved to [/tmp"),
+    ],
+)
+def test_text_that_is_not_valid_markup_is_printed_as_it_is(
+    write: Callable[[ConsoleStyle, str], None], text: str
+) -> None:
+    terminal = Terminal()
+
+    write(terminal.style, text)
+
+    assert text in "\n".join(terminal.lines)
+
+
+def test_list_items_and_table_cells_that_are_not_valid_markup_print_as_they_are() -> None:
+    terminal = Terminal()
+
+    terminal.style.listing(["a [/b]"])
+    terminal.style.table(["[/head]"], [["[/cell]"]])
+
+    rendered = "\n".join(terminal.lines)
+    assert all(text in rendered for text in ("a [/b]", "[/head]", "[/cell]"))
+
+
+def test_a_question_that_is_not_valid_markup_is_still_asked() -> None:
+    assert Terminal(["x"]).style.ask("Value [/]?") == "x"
+
+
+# ─── when input runs out ─────────────────────────────────────────
+
+
+@pytest.fixture
+def closed_stdin(monkeypatch: pytest.MonkeyPatch) -> ConsoleStyle:
+    """A style reading the terminal — whose input has ended, as in a CI job."""
+
+    def ended(*_args: object, **_kwargs: object) -> str:
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", ended)
+    monkeypatch.setattr("getpass.getpass", ended)
+    return ConsoleStyle(Console(file=StringIO(), color_system=None))
+
+
+def test_ask_answers_with_its_default_when_input_has_ended(closed_stdin: ConsoleStyle) -> None:
+    assert closed_stdin.ask("Name?", "ada") == "ada"
+
+
+def test_confirm_answers_with_its_default_when_input_has_ended(closed_stdin: ConsoleStyle) -> None:
+    assert closed_stdin.confirm("Go?", default=False) is False
+
+
+def test_ask_hidden_answers_empty_when_input_has_ended(closed_stdin: ConsoleStyle) -> None:
+    assert closed_stdin.ask_hidden("Token?") == ""
+
+
+# ─── choices ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("interactive", [True, False])
+def test_a_default_outside_the_choices_is_refused(interactive: bool) -> None:
+    style = Terminal(["user"], interactive=interactive).style
+
+    with pytest.raises(InvalidDefaultError) as raised:
+        _ = style.ask("Role?", "root", choices=["user", "admin"])
+
+    assert (raised.value.default, raised.value.choices) == ("root", ("user", "admin"))
+
+
+def test_choices_without_a_default_are_accepted() -> None:
+    assert Terminal(["admin"]).style.ask("Role?", choices=["user", "admin"]) == "admin"
+
+
+def test_confirm_left_unanswered_is_a_no() -> None:
+    assert Terminal([""]).style.confirm("Delete everything?") is False

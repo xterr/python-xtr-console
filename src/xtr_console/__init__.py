@@ -9,9 +9,12 @@ through :mod:`xtr_console.integration.wireup`.
 The core has no dependency-injection container of its own, and imports none.
 """
 
+from importlib.metadata import version
+
 from .application import Application, Hook
 from .command import (
     CommandArguments,
+    CommandCallable,
     CommandDescriptor,
     CommandInvokerInterface,
     CommandSignature,
@@ -22,9 +25,14 @@ from .command import (
 )
 from .decorator import as_command
 from .exception import (
+    ApplicationAlreadyWiredError,
     CommandSignatureError,
     ConsoleError,
     DuplicateCommandError,
+    EventLoopRunningError,
+    InvalidCommandNameError,
+    InvalidCommandResultError,
+    InvalidDefaultError,
     MissingContainerError,
     UnregisteredCommandError,
 )
@@ -32,12 +40,14 @@ from .exit_code import ExitCode
 from .style import ConsoleStyle
 from .tester import ApplicationTester, CommandTester
 
-__version__ = "0.1.0"
+__version__ = version("xtr-console")
 
 __all__ = [
     "Application",
+    "ApplicationAlreadyWiredError",
     "ApplicationTester",
     "CommandArguments",
+    "CommandCallable",
     "CommandDescriptor",
     "CommandInvokerInterface",
     "CommandSignature",
@@ -49,8 +59,12 @@ __all__ = [
     "ConsoleStyle",
     "DefaultCommandInvoker",
     "DuplicateCommandError",
+    "EventLoopRunningError",
     "ExitCode",
     "Hook",
+    "InvalidCommandNameError",
+    "InvalidCommandResultError",
+    "InvalidDefaultError",
     "MissingContainerError",
     "UnregisteredCommandError",
     "__version__",

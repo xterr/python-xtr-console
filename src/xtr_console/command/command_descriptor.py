@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import inspect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final, TypeAlias, cast
 
-from xtr_console.exception import CommandSignatureError
+from xtr_console.exception import (
+    CommandSignatureError,
+    DuplicateCommandError,
+    InvalidCommandNameError,
+)
 
-__all__ = ["CommandDescriptor", "CommandTarget", "call_of", "default_name_of"]
+__all__ = ["CommandDescriptor", "CommandTarget", "call_of", "default_name_of", "function_of"]
 
 CommandTarget: TypeAlias = Callable[..., object] | type
 """A command function, or a class whose instances are the command."""
@@ -30,8 +35,11 @@ class CommandDescriptor:
     docstring would otherwise supply.
 
     Raises:
+        InvalidCommandNameError: If the name or an alias is empty, holds
+            whitespace, or starts with ``-``.
+        DuplicateCommandError: If the command repeats one of its own names.
         CommandSignatureError: If ``target`` is a class that defines no
-            ``__call__``.
+            ``__call__``, or is a generator — calling one runs nothing.
     """
 
     target: CommandTarget
@@ -41,9 +49,17 @@ class CommandDescriptor:
     hidden: bool = False
 
     def __post_init__(self) -> None:
-        """Refuse a class that has nothing to call."""
-        if isinstance(self.target, type) and call_of(self.target) is None:
+        """Refuse what the command line could not call, or could not type."""
+        for name in self.names:
+            _check_name(name)
+        for position, name in enumerate(self.names):
+            if name in self.names[:position]:
+                raise DuplicateCommandError(name, self.name)
+        called = function_of(self.target)
+        if called is None:
             raise CommandSignatureError(self.name, "a command class must define __call__")
+        if inspect.isgeneratorfunction(called) or inspect.isasyncgenfunction(called):
+            raise CommandSignatureError(self.name, "a command cannot be a generator")
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -82,3 +98,33 @@ def call_of(command_type: type) -> Callable[..., object] | None:
         if found is not None:
             return found
     return None
+
+
+def function_of(target: CommandTarget) -> Callable[..., object] | None:
+    """Return the function that runs when ``target``'s command runs.
+
+    For a class, its ``__call__`` — unwrapped when it is a ``staticmethod``
+    or a ``classmethod``; for a callable object, its type's ``__call__``.
+    """
+    if not isinstance(target, type):
+        return target if inspect.isroutine(target) else call_of(type(target))
+    called = call_of(target)
+    if isinstance(called, (staticmethod, classmethod)):
+        unwrapped: Callable[..., object] = called.__func__
+        return unwrapped
+    return called
+
+
+def _check_name(name: str) -> None:
+    """Refuse a name nobody could type as a command.
+
+    Raises:
+        InvalidCommandNameError: If it is empty, holds whitespace, or
+            starts with ``-`` — the command line would read it as an option.
+    """
+    if not name:
+        raise InvalidCommandNameError(name, "it is empty")
+    if any(character.isspace() for character in name):
+        raise InvalidCommandNameError(name, "it holds whitespace")
+    if name.startswith("-"):
+        raise InvalidCommandNameError(name, "it starts with '-', like an option")

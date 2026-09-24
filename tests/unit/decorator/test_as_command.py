@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, cast
+
 import pytest
 
 from xtr_console import CommandSignatureError, CommandsLocator, as_command, default_registry
 
+if TYPE_CHECKING:
+    from xtr_console import CommandCallable
+
 
 def test_a_bare_decoration_returns_the_function_unchanged() -> None:
-    async def create_user() -> None: ...
+    async def create_user() -> int:
+        return 0
 
     assert as_command(create_user) is create_user
 
@@ -15,7 +21,8 @@ def test_a_bare_decoration_names_the_command_after_the_function() -> None:
     before = len(default_registry().commands())
 
     @as_command
-    async def test_as_command_bare_default_registry() -> None: ...
+    async def test_as_command_bare_default_registry() -> int:
+        return 0
 
     declared = default_registry().commands()[before:]
     assert [command.name for command in declared] == ["test-as-command-bare-default-registry"]
@@ -25,7 +32,8 @@ def test_a_declaration_registers_into_the_given_registry() -> None:
     registry = CommandsLocator()
 
     @as_command("user:create", registry=registry)
-    async def create_user() -> None: ...
+    async def create_user() -> int:
+        return 0
 
     assert [command.target for command in registry.commands()] == [create_user]
 
@@ -33,7 +41,8 @@ def test_a_declaration_registers_into_the_given_registry() -> None:
 def test_a_declaration_returns_what_it_decorates() -> None:
     registry = CommandsLocator()
 
-    async def create_user() -> None: ...
+    async def create_user() -> int:
+        return 0
 
     assert as_command("user:create", registry=registry)(create_user) is create_user
 
@@ -43,7 +52,8 @@ def test_empty_parentheses_name_the_command_after_what_it_decorates() -> None:
 
     @as_command(registry=registry)
     class ImportUsersCommand:
-        def __call__(self) -> None: ...
+        def __call__(self) -> int:
+            return 0
 
     assert registry.commands()[0].name == "import-users"
 
@@ -54,7 +64,8 @@ def test_every_property_is_recorded() -> None:
     @as_command(
         "user:create", aliases=("uc", "add"), description="Add one", hidden=True, registry=registry
     )
-    async def create_user() -> None: ...
+    async def create_user() -> int:
+        return 0
 
     command = registry.commands()[0]
     assert (command.aliases, command.description, command.hidden) == (
@@ -68,7 +79,8 @@ def test_a_single_alias_may_be_a_string() -> None:
     registry = CommandsLocator()
 
     @as_command("user:create", aliases="uc", registry=registry)
-    async def create_user() -> None: ...
+    async def create_user() -> int:
+        return 0
 
     assert registry.commands()[0].aliases == ("uc",)
 
@@ -79,5 +91,8 @@ def test_a_class_without_call_is_refused() -> None:
     class NotACommand:
         pass
 
+    # A type checker already refuses this; the runtime check is under test.
+    declared = cast("type[CommandCallable]", cast("object", NotACommand))
+
     with pytest.raises(CommandSignatureError):
-        _ = as_command("nope", registry=registry)(NotACommand)
+        _ = as_command("nope", registry=registry)(declared)

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
+import sys
+from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast, final
 
 from cyclopts import App, Group, Parameter
@@ -12,8 +15,9 @@ from rich import box
 from rich.markup import escape
 from rich.text import Text
 
-from .command import CommandSignature, DefaultCommandInvoker, default_registry
-from .command.command_descriptor import call_of
+from .command import CommandSelection, CommandSignature, DefaultCommandInvoker, default_registry
+from .command.command_descriptor import function_of
+from .exception import EventLoopRunningError, InvalidCommandResultError
 from .exit_code import ExitCode
 from .style import ConsoleStyle
 from .style.console_style import block
@@ -96,6 +100,11 @@ class Application:
         self._shutdown: list[Hook] = []
 
     @property
+    def name(self) -> str:
+        """Return the name the application is invoked by."""
+        return self._name
+
+    @property
     def commands(self) -> CommandsLocatorInterface:
         """Return the registry the commands are read from."""
         return self._commands
@@ -108,6 +117,11 @@ class Application:
         """Run ``hook`` after the command, even if it raised."""
         self._shutdown.append(hook)
 
+    @property
+    def invoker(self) -> CommandInvokerInterface:
+        """Return what builds and calls the commands."""
+        return self._invoker
+
     def use_invoker(self, invoker: CommandInvokerInterface) -> None:
         """Have ``invoker`` build and call commands — a container, typically."""
         self._invoker = invoker
@@ -118,12 +132,22 @@ class Application:
         ``argv`` defaults to ``sys.argv[1:]``. Hand the result to the shell::
 
             raise SystemExit(application.run())
+
+        Raises:
+            EventLoopRunningError: If called from async code; await
+                :meth:`run_async` there.
         """
-        app = self._build(ConsoleStyle())
+        if _loop_running():
+            raise EventLoopRunningError
+        selection = self._selection(argv)
+        style = ConsoleStyle()
+        app = self._build(style, selection.commands)
         try:
-            code = cast("int", app(argv, exit_on_error=False))
+            code = cast("int", app(selection.tokens, exit_on_error=False))
         except CycloptsError:
             return ExitCode.INVALID
+        except SystemExit as stop:
+            return _exit_code_of(stop, style)
         return code
 
     async def run_async(
@@ -132,17 +156,27 @@ class Application:
         """Run the command ``argv`` names on the running loop; return its exit code.
 
         Output goes through ``style``, a fresh :class:`ConsoleStyle` on the
-        terminal when omitted.
+        terminal when omitted. A command that exits — ``sys.exit(3)``, or
+        Ctrl-C, which exits ``130`` — ends the run with that code rather than
+        leaving the process.
         """
-        app = self._build(style if style is not None else ConsoleStyle())
+        selection = self._selection(argv)
+        style = style if style is not None else ConsoleStyle()
+        app = self._build(style, selection.commands)
         try:
-            code = cast("int", await app.run_async(argv, exit_on_error=False))
+            code = cast("int", await app.run_async(selection.tokens, exit_on_error=False))
         except CycloptsError:
             return ExitCode.INVALID
+        except SystemExit as stop:
+            return _exit_code_of(stop, style)
         return code
 
-    def _build(self, style: ConsoleStyle) -> App:
-        """Build the parser for every command declared so far."""
+    def _selection(self, argv: Sequence[str] | None) -> CommandSelection:
+        tokens = list(argv) if argv is not None else sys.argv[1:]
+        return CommandSelection.of(self._commands.commands(), tokens)
+
+    def _build(self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]) -> App:
+        """Build the parser for ``commands``."""
         header = self._header()
         app = App(
             name=self._name,
@@ -168,7 +202,7 @@ class Application:
         for flag in ("--help", "--version") if self._version is not None else ("--help",):
             app[flag].group = (options,)
         namespaces: dict[str, Group] = {}
-        for command in self._commands.commands():
+        for command in commands:
             namespace = command.namespace
             group = (
                 namespaces.setdefault(namespace, Group(namespace, sort_key=3, theme=_THEME))
@@ -201,7 +235,7 @@ class Application:
             return await self._execute(command, signature.arguments(bound, style), signature, style)
 
         target = command.target
-        documented = call_of(target) if isinstance(target, type) else target
+        documented = function_of(target) if isinstance(target, type) else target
         entry.__name__ = command.name
         entry.__doc__ = inspect.getdoc(documented) or inspect.getdoc(target)
         entry.__dict__["__signature__"] = signature.command_line
@@ -214,20 +248,26 @@ class Application:
         signature: CommandSignature,
         style: ConsoleStyle,
     ) -> object:
-        """Run the startup hooks, the command, then the shutdown hooks."""
-        for hook in self._startup:
-            await _call(hook)
+        """Run the startup hooks, the command, then the shutdown hooks.
+
+        Every shutdown hook runs, in the order added, once startup has begun —
+        whether a startup hook, the command or another shutdown hook raised.
+        Whatever raised is one failure, each error chained to the one before.
+        """
         try:
-            result = await self._invoker.invoke(command, signature, arguments)
+            async with AsyncExitStack() as shutdown:
+                for hook in reversed(self._shutdown):
+                    _ = shutdown.push_async_callback(_call, hook)
+                for hook in self._startup:
+                    await _call(hook)
+                return _exit_code(
+                    command, await self._invoker.invoke(command, signature, arguments)
+                )
         except Exception:
             if not self._catch_exceptions:
                 raise
             style.error_console.print_exception()
             return ExitCode.FAILURE
-        finally:
-            for hook in self._shutdown:
-                await _call(hook)
-        return result
 
     def _header(self) -> str:
         name = f"[green]{escape(self._name)}[/green]"
@@ -250,3 +290,38 @@ async def _call(hook: Hook) -> None:
     result = hook()
     if inspect.isawaitable(result):
         await result
+
+
+def _exit_code(command: CommandDescriptor, result: object) -> int:
+    """Return ``result`` as the exit code it must be.
+
+    Raises:
+        InvalidCommandResultError: If it is not an ``int`` — or is a ``bool``.
+    """
+    if not isinstance(result, int) or isinstance(result, bool):
+        raise InvalidCommandResultError(command.name, type(result).__qualname__)
+    return result
+
+
+def _loop_running() -> bool:
+    try:
+        _ = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _exit_code_of(stop: SystemExit, style: ConsoleStyle) -> int:
+    """Read the exit code the way Python does when a process exits.
+
+    ``None`` is success and an ``int`` is the code; anything else is a
+    message, printed to standard error, and a failure.
+    """
+    match stop.code:
+        case None:
+            return ExitCode.SUCCESS
+        case int():
+            return stop.code
+        case message:
+            style.error_console.print(str(message), markup=False, highlight=False)
+            return ExitCode.FAILURE

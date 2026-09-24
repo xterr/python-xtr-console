@@ -18,6 +18,7 @@ from wireup.errors import WireupError
 
 from xtr_console import (
     Application,
+    ApplicationAlreadyWiredError,
     ApplicationTester,
     CommandsLocator,
     ConsoleStyle,
@@ -71,8 +72,9 @@ class Unknown:
 @as_command("user:create", registry=COMMANDS)
 async def create_user(
     email: str, db: Injected[Session], io: ConsoleStyle, *, admin: bool = False
-) -> None:
+) -> int:
     io.text(f"{email} admin={admin} open={db.open}")
+    return 0
 
 
 @as_command("user:import", registry=COMMANDS)
@@ -92,13 +94,15 @@ class ImportUsers:
 @as_command("user:count", registry=COMMANDS)
 @final
 class CountUsers:
-    def __call__(self, io: ConsoleStyle, greeter: Injected[Greeter]) -> None:
+    def __call__(self, io: ConsoleStyle, greeter: Injected[Greeter]) -> int:
         io.text(greeter.greet("sync"))
+        return 0
 
 
 @as_command("broken", registry=COMMANDS)
-async def broken(thing: Injected[Unknown]) -> None:
+async def broken(thing: Injected[Unknown]) -> int:
     del thing
+    return 0
 
 
 def container_for(application: Application) -> AsyncContainer:
@@ -128,6 +132,20 @@ async def test_the_container_provides_the_application_it_was_given() -> None:
     provided = await container_for(application).get(Application)
 
     assert provided is application
+
+
+async def test_one_application_cannot_be_wired_to_two_containers() -> None:
+    application = Application("acme", commands=COMMANDS)
+    _ = await container_for(application).get(Application)
+
+    with pytest.raises(ApplicationAlreadyWiredError):
+        _ = await container_for(application).get(Application)
+
+
+async def test_the_same_container_provides_the_application_every_time() -> None:
+    container = container_for(Application("acme", commands=COMMANDS))
+
+    assert await container.get(Application) is await container.get(Application)
 
 
 # ─── functions ───────────────────────────────────────────────────
@@ -202,7 +220,8 @@ def test_a_constructor_asking_for_a_scoped_dependency_is_refused() -> None:
         def __init__(self, db: Session) -> None:
             self.db = db
 
-        def __call__(self) -> None: ...
+        def __call__(self) -> int:
+            return 0
 
     with pytest.raises(WireupError):
         _ = container_for(Application("acme", commands=commands))
@@ -215,7 +234,8 @@ async def test_a_class_declared_after_the_container_is_refused() -> None:
     @as_command("late", registry=commands)
     @final
     class Late:
-        def __call__(self) -> None: ...
+        def __call__(self) -> int:
+            return 0
 
     tester = ApplicationTester(await container.get(Application))
 
@@ -223,8 +243,10 @@ async def test_a_class_declared_after_the_container_is_refused() -> None:
         _ = await tester.execute(["late"])
 
 
-async def test_a_dependency_nothing_provides_is_refused(tester: ApplicationTester) -> None:
-    with pytest.raises(WireupError):
+async def test_a_dependency_nothing_provides_is_refused_naming_the_command(
+    tester: ApplicationTester,
+) -> None:
+    with pytest.raises(WireupError, match="function broken"):
         _ = await tester.execute(["broken"])
 
 

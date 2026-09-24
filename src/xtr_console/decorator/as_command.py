@@ -22,13 +22,19 @@ from xtr_console.command.command_descriptor import CommandDescriptor, default_na
 from xtr_console.command.default_registry import default_registry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Awaitable, Callable, Sequence
 
+    from xtr_console.command.command_callable import CommandCallable
     from xtr_console.command.commands_locator_interface import CommandsLocatorInterface
 
 __all__ = ["as_command"]
 
-CommandT = TypeVar("CommandT", bound="Callable[..., object] | type")
+# A command returns its exit code: a type checker refuses, where it is
+# declared, a function or a class whose call returns anything but an int.
+CommandT = TypeVar(
+    "CommandT",
+    bound="Callable[..., int | Awaitable[int]] | type[CommandCallable]",
+)
 
 
 @overload
@@ -74,9 +80,16 @@ def as_command(
     A class is built only when its command runs: with no arguments, or by a
     container when one is wired.
 
+    A command returns its exit code — an ``int``, or an :class:`ExitCode` —
+    and says so in its return annotation. A type checker refuses anything
+    else here; the application refuses it again as the command is built,
+    and once more should it return something else all the same.
+
     Raises:
+        InvalidCommandNameError: If the name or an alias cannot be typed.
         DuplicateCommandError: If the name or an alias is already taken.
-        CommandSignatureError: If a class defines no ``__call__``.
+        CommandSignatureError: If a class defines no ``__call__``, or the
+            command is a generator.
     """
     locator = registry if registry is not None else default_registry()
     alias_names = (aliases,) if isinstance(aliases, str) else tuple(aliases)

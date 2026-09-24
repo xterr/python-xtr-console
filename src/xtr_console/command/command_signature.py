@@ -6,13 +6,16 @@ import inspect
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import cache
+from types import UnionType
 from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
+
+from cyclopts import Parameter
 
 from xtr_console.exception import CommandSignatureError
 from xtr_console.style import ConsoleStyle
 
 from .command_arguments import CommandArguments
-from .command_descriptor import call_of
+from .command_descriptor import call_of, function_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,10 +59,16 @@ class CommandSignature:
         """Sort the parameters of ``command``.
 
         Raises:
-            CommandSignatureError: If an annotation cannot be evaluated, or a
-                parameter a container fills cannot be passed by keyword.
+            CommandSignatureError: If an annotation cannot be evaluated, the
+                command is not annotated to return an ``int``, a parameter
+                would take ``--help`` over, or a parameter a container fills
+                cannot be passed by keyword.
         """
-        parameters = _parameters_of(command)
+        parameters, returned = _signature_of(command)
+        if not _is_exit_code(returned):
+            shown = "nothing" if returned is inspect.Signature.empty else repr(returned)
+            reason = f"it must be annotated to return an int or an ExitCode, not {shown}"
+            raise CommandSignatureError(command.name, reason)
         by_position = any(p.kind is _Parameter.VAR_POSITIONAL for p in parameters)
         styled = tuple(p.name for p in parameters if _is_style(_annotation_of(p)))
         injected = tuple(p.name for p in parameters if _supplied_by_container(_annotation_of(p)))
@@ -69,6 +78,11 @@ class CommandSignature:
                     command.name,
                     f"container-supplied parameter {parameter.name!r} must be passable by keyword",
                 )
+            if parameter.name not in {*styled, *injected} and _takes_help_over(parameter):
+                reason = (
+                    "parameter 'help' would take --help over; rename it with Parameter(name=...)"
+                )
+                raise CommandSignatureError(command.name, reason)
         return cls(
             callable_signature=inspect.Signature(parameters),
             command_line=inspect.Signature(
@@ -94,22 +108,45 @@ class CommandSignature:
         return CommandArguments(call.args, call.kwargs)
 
 
-def _parameters_of(command: CommandDescriptor) -> list[inspect.Parameter]:
-    """Return the parameters ``command`` is called with, annotations evaluated.
+def _signature_of(command: CommandDescriptor) -> tuple[list[inspect.Parameter], object]:
+    """Return the parameters ``command`` is called with, and what it returns.
+
+    Annotations are evaluated.
 
     Raises:
         CommandSignatureError: If an annotation names something that cannot
             be resolved.
     """
     target = command.target
-    call: Callable[..., object] | None = call_of(target) if isinstance(target, type) else target
+    call: Callable[..., object] | None = function_of(target) if isinstance(target, type) else target
     if call is None:
         raise CommandSignatureError(command.name, "a command class must define __call__")
     try:
-        parameters = list(inspect.signature(call, eval_str=True).parameters.values())
+        signature = inspect.signature(call, eval_str=True)
     except NameError as error:
         raise CommandSignatureError(command.name, f"cannot evaluate annotation: {error}") from error
-    return parameters[1:] if isinstance(target, type) else parameters
+    parameters = list(signature.parameters.values())
+    returned = cast("object", signature.return_annotation)
+    # A class's __call__ is bound to the instance — or to the class, as a
+    # classmethod — unless it is a staticmethod, which has nothing to drop.
+    bound = isinstance(target, type) and not isinstance(call_of(target), staticmethod)
+    return (parameters[1:] if bound else parameters), returned
+
+
+def _is_exit_code(annotation: object) -> bool:
+    """Report whether ``annotation`` promises an exit code: an ``int``, not a ``bool``."""
+    return isinstance(annotation, type) and issubclass(annotation, int) and annotation is not bool
+
+
+def _takes_help_over(parameter: inspect.Parameter) -> bool:
+    """Report whether ``parameter`` would become ``--help``, unless renamed."""
+    if parameter.name != "help":
+        return False
+    annotation = _annotation_of(parameter)
+    metadata: tuple[object, ...] = (
+        get_args(annotation)[1:] if get_origin(annotation) is Annotated else ()
+    )
+    return not any(isinstance(item, Parameter) and item.name for item in metadata)
 
 
 def _by_keyword(parameter: inspect.Parameter, by_position: bool) -> bool:
@@ -140,8 +177,26 @@ def _annotation_of(parameter: inspect.Parameter) -> object:
     return cast("object", parameter.annotation)
 
 
+def _members_of(annotation: object) -> tuple[object, ...]:
+    """Return what ``annotation`` may be: its members if a union, else itself.
+
+    ``X | None`` has the origin ``UnionType``; ``Optional[X]`` has
+    ``typing.Union`` until Python 3.14 makes them one — compared by name, as
+    naming it is deprecated.
+    """
+    origin = get_origin(annotation)
+    if origin is UnionType or str(origin) == "typing.Union":
+        members: tuple[object, ...] = get_args(annotation)
+        return members
+    return (annotation,)
+
+
 def _is_style(annotation: object) -> bool:
-    return isinstance(annotation, type) and issubclass(annotation, ConsoleStyle)
+    """Report whether ``annotation`` asks for the style, ``X | None`` included."""
+    return any(
+        isinstance(member, type) and issubclass(member, ConsoleStyle)
+        for member in _members_of(annotation)
+    )
 
 
 def _supplied_by_container(annotation: object) -> bool:
@@ -151,10 +206,14 @@ def _supplied_by_container(annotation: object) -> bool:
     nothing to recognise, so this cannot change behaviour.
     """
     marker = _container_marker()
-    if marker is None or get_origin(annotation) is not Annotated:
+    if marker is None:
         return False
-    metadata: tuple[object, ...] = get_args(annotation)[1:]
-    return any(isinstance(item, marker) for item in metadata)
+    return any(
+        isinstance(item, marker)
+        for member in _members_of(annotation)
+        if get_origin(member) is Annotated
+        for item in cast("tuple[object, ...]", get_args(member)[1:])
+    )
 
 
 @cache

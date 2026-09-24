@@ -53,7 +53,7 @@ import inspect
 import types
 from collections.abc import Awaitable, Callable
 from functools import cache
-from typing import final
+from typing import cast, final
 
 import wireup
 from typing_extensions import override
@@ -66,8 +66,13 @@ from xtr_console.command import (
     CommandDescriptor,
     CommandInvokerInterface,
     CommandSignature,
+    CommandTarget,
 )
-from xtr_console.exception import CommandSignatureError, UnregisteredCommandError
+from xtr_console.exception import (
+    ApplicationAlreadyWiredError,
+    CommandSignatureError,
+    UnregisteredCommandError,
+)
 
 __all__ = ["injectables"]
 
@@ -84,9 +89,16 @@ def injectables(application: Application) -> list[object]:
     Args:
         application: The application to provide, configured as it should run.
             Its commands are the ones registered.
+
+    Raises:
+        ApplicationAlreadyWiredError: When a container provides
+            ``application`` after another one did.
     """
 
     def provide(container: AsyncContainer) -> Application:
+        wired = application.invoker
+        if isinstance(wired, _ContainerInvoker) and wired.container is not container:
+            raise ApplicationAlreadyWiredError(application.name)
         application.use_invoker(_ContainerInvoker(container))
         return application
 
@@ -108,6 +120,11 @@ class _ContainerInvoker(CommandInvokerInterface):
     def __init__(self, container: AsyncContainer) -> None:
         self._container = container
 
+    @property
+    def container(self) -> AsyncContainer:
+        """Return the container commands are built and filled from."""
+        return self._container
+
     @override
     async def invoke(
         self,
@@ -128,7 +145,7 @@ class _ContainerInvoker(CommandInvokerInterface):
             call = await _built(scope, command, target) if isinstance(target, type) else target
             entry = wireup.inject_from_container(
                 self._container, scoped_container_supplier=lambda: scope
-            )(_awaiting(call, signature.callable_signature))
+            )(_awaiting(call, signature.callable_signature, target))
             return await entry(*arguments.args, **arguments.kwargs)
 
 
@@ -151,7 +168,7 @@ async def _built(
 
 
 def _awaiting(
-    call: Callable[..., object], signature: inspect.Signature
+    call: Callable[..., object], signature: inspect.Signature, declared: CommandTarget
 ) -> Callable[..., Awaitable[object]]:
     """Return a coroutine function calling ``call``, presenting ``signature``.
 
@@ -159,13 +176,17 @@ def _awaiting(
     function in a wrapper that awaits the container — the only kind that can
     resolve an async factory. ``signature`` has its annotations evaluated
     already, so wireup never has to resolve a string against a module it
-    cannot see.
+    cannot see. Named after what was ``declared``, so an error wireup raises
+    points at the command, not at this wrapper.
     """
 
     async def entry(*args: object, **kwargs: object) -> object:
         result = call(*args, **kwargs)
         return await result if inspect.isawaitable(result) else result
 
+    entry.__name__ = cast("str", getattr(declared, "__name__", entry.__name__))
+    entry.__qualname__ = cast("str", getattr(declared, "__qualname__", entry.__qualname__))
+    entry.__module__ = cast("str", getattr(declared, "__module__", entry.__module__))
     entry.__dict__["__signature__"] = signature
     return entry
 
