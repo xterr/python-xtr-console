@@ -8,6 +8,7 @@ wheels/
 .omo
 .opencode
 .tmp
+.idea
 
 # Virtual environments
 .venv
