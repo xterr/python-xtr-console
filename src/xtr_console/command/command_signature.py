@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
 from cyclopts import Parameter
 
 from xtr_console.exception import CommandSignatureError
+from xtr_console.global_options import GLOBAL_FLAGS
 from xtr_console.style import ConsoleStyle
 
 from .command_arguments import CommandArguments
@@ -78,9 +79,18 @@ class CommandSignature:
                     command.name,
                     f"container-supplied parameter {parameter.name!r} must be passable by keyword",
                 )
-            if parameter.name not in {*styled, *injected} and _takes_help_over(parameter):
+            if parameter.name in {*styled, *injected}:
+                continue
+            if _takes_help_over(parameter):
                 reason = (
                     "parameter 'help' would take --help over; rename it with Parameter(name=...)"
+                )
+                raise CommandSignatureError(command.name, reason)
+            claimed = sorted(GLOBAL_FLAGS.intersection(_option_names(parameter)))
+            if claimed:
+                reason = (
+                    f"parameter {parameter.name!r} would take the global option {claimed[0]} "
+                    "over; rename it with Parameter(name=..., alias=...)"
                 )
                 raise CommandSignatureError(command.name, reason)
         return cls(
@@ -142,11 +152,34 @@ def _takes_help_over(parameter: inspect.Parameter) -> bool:
     """Report whether ``parameter`` would become ``--help``, unless renamed."""
     if parameter.name != "help":
         return False
+    return not any(settings.name for settings in _settings_of(parameter))
+
+
+def _option_names(parameter: inspect.Parameter) -> set[str]:
+    """Return every flag an option parameter answers to; none for an argument.
+
+    Its name — ``--dry-run`` for ``dry_run`` unless ``Parameter(name=...)``
+    says otherwise — its aliases and any negative form.
+    """
+    if parameter.kind is not _Parameter.KEYWORD_ONLY:
+        return set()
+    # cyclopts turns each of these into a tuple of strings, or None.
+    settings = _settings_of(parameter)
+    names = [name for entry in settings for name in entry.name or ()]
+    if not names:
+        names = [parameter.name.lower().replace("_", "-")]
+    names.extend(alias for entry in settings for alias in entry.alias or ())
+    names.extend(negative for entry in settings for negative in entry.negative or ())
+    return {name if name.startswith("-") else f"--{name}" for name in names}
+
+
+def _settings_of(parameter: inspect.Parameter) -> tuple[Parameter, ...]:
+    """Return the cyclopts ``Parameter`` settings ``Annotated`` attaches to ``parameter``."""
     annotation = _annotation_of(parameter)
     metadata: tuple[object, ...] = (
         get_args(annotation)[1:] if get_origin(annotation) is Annotated else ()
     )
-    return not any(isinstance(item, Parameter) and item.name for item in metadata)
+    return tuple(item for item in metadata if isinstance(item, Parameter))
 
 
 def _by_keyword(parameter: inspect.Parameter, by_position: bool) -> bool:

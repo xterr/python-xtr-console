@@ -5,7 +5,7 @@ import typing
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal, cast, final
+from typing import TYPE_CHECKING, Annotated, Literal, cast, final
 
 import pytest
 from cyclopts import Parameter, validators
@@ -22,6 +22,9 @@ from xtr_console import (
     ExitCode,
     as_command,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @final
@@ -250,7 +253,7 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
     name: str,
     ratio: float = 0.5,
     when: datetime | None = None,
-    verbose: Annotated[int, Parameter(alias="-v", count=True)] = 0,
+    depth: Annotated[int, Parameter(alias="-d", count=True)] = 0,
     force: Annotated[bool, Parameter(alias="-f")] = False,
     cache: Annotated[bool, Parameter(negative="--no-cache")] = True,
     tags: list[str] | None = None,
@@ -265,7 +268,7 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
         name=name,
         ratio=ratio,
         when=when,
-        verbose=verbose,
+        depth=depth,
         force=force,
         cache=cache,
         tags=tags,
@@ -282,7 +285,7 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
 @as_command("class", registry=PARSED)
 @final
 class ClassOptionsCommand:
-    def __call__(self, path: Path, *, size: Annotated[int, Parameter(alias="-n")] = 2) -> int:
+    def __call__(self, path: Path, *, size: Annotated[int, Parameter(alias="-s")] = 2) -> int:
         received.update(path=path, size=size)
         return 0
 
@@ -349,7 +352,7 @@ async def test_options_left_out_take_their_defaults(parser: ApplicationTester) -
         "name": "x",
         "ratio": 0.5,
         "when": None,
-        "verbose": 0,
+        "depth": 0,
         "force": False,
         "cache": True,
         "tags": None,
@@ -369,8 +372,8 @@ async def test_options_left_out_take_their_defaults(parser: ApplicationTester) -
         (("--ratio", "1.5"), "ratio", 1.5),
         (("--ratio=2.5",), "ratio", 2.5),
         (("--when", "2026-01-02T03:04:05"), "when", datetime(2026, 1, 2, 3, 4, 5)),  # noqa: DTZ001
-        (("-vvv",), "verbose", 3),
-        (("--verbose", "--verbose"), "verbose", 2),
+        (("-ddd",), "depth", 3),
+        (("--depth", "--depth"), "depth", 2),
         (("--force",), "force", True),
         (("-f",), "force", True),
         (("--no-cache",), "cache", False),
@@ -432,7 +435,7 @@ async def test_the_command_line_beats_the_environment(
 async def test_a_class_command_takes_arguments_and_options_on_call(
     parser: ApplicationTester,
 ) -> None:
-    _ = await parse(parser, "class", "users.csv", "-n", "7")
+    _ = await parse(parser, "class", "users.csv", "-s", "7")
 
     assert received == {"path": Path("users.csv"), "size": 7}
 
@@ -518,3 +521,50 @@ def test_a_parameter_named_help_but_renamed_is_accepted() -> None:
         return 0
 
     assert list(signature_of(command).command_line.parameters) == ["help"]
+
+
+# ─── global options ──────────────────────────────────────────────
+
+
+def quiet_by_name(*, quiet: bool = False) -> int:
+    del quiet
+    return 0
+
+
+def verbose_by_alias(*, depth: Annotated[int, Parameter(alias="-v", count=True)] = 0) -> int:
+    del depth
+    return 0
+
+
+def silent_by_rename(*, mute: Annotated[bool, Parameter(name="silent")] = False) -> int:
+    del mute
+    return 0
+
+
+def ansi_by_negative(*, color: Annotated[bool, Parameter(negative="--no-ansi")] = True) -> int:
+    del color
+    return 0
+
+
+@pytest.mark.parametrize(
+    ("command", "flag"),
+    [
+        (quiet_by_name, "--quiet"),
+        (verbose_by_alias, "-v"),
+        (silent_by_rename, "--silent"),
+        (ansi_by_negative, "--no-ansi"),
+    ],
+)
+def test_an_option_claiming_a_global_option_is_refused(
+    command: Callable[..., int], flag: str
+) -> None:
+    with pytest.raises(CommandSignatureError, match=f"global option {flag} over"):
+        _ = signature_of(command)
+
+
+def test_an_argument_may_share_a_global_options_name() -> None:
+    def command(quiet: str) -> int:
+        del quiet
+        return 0
+
+    assert list(signature_of(command).command_line.parameters) == ["quiet"]
