@@ -42,7 +42,12 @@ dev = [
     "anyio>=4.0",
     "ty>=0.0.83",
     "wireup>=2.12",
+    "xtr-logging>=0.2",
 ]
+
+# xtr-logging is not on PyPI yet; resolve it from its repository meanwhile.
+[tool.uv.sources]
+xtr-logging = { git = "https://github.com/xterr/python-xtr-logging.git" }
 
 [build-system]
 requires = ["hatchling"]
