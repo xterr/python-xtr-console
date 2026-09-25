@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import sys
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast, final
@@ -19,8 +20,11 @@ from .command import CommandSelection, CommandSignature, DefaultCommandInvoker, 
 from .command.command_descriptor import function_of
 from .exception import EventLoopRunningError, InvalidCommandResultError
 from .exit_code import ExitCode
+from .global_options import GlobalOptions, list_global_options
 from .style import ConsoleStyle
 from .style.console_style import block
+from .style.exception_renderer import render_exception
+from .verbosity import SHELL_VERBOSITY, Verbosity
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -58,9 +62,13 @@ class Application:
     shutdown hooks run on the same loop, so a resource opened on startup is
     usable by the command and closed on shutdown.
 
-    With ``catch_exceptions`` on, an exception escaping a command is rendered
-    and the run ends with :attr:`ExitCode.FAILURE`; off, it propagates, as a
-    test usually wants.
+    Every command takes the global options — ``-v``/``-vv``/``-vvv``, ``-q``,
+    ``--silent``, ``-n``, ``--ansi``/``--no-ansi`` — anywhere on its command
+    line; they set the :class:`ConsoleStyle` it writes through.
+
+    With ``catch_exceptions`` on, an exception escaping a command is reported
+    — its message, or with ``-v`` its traceback — and the run ends with
+    :attr:`ExitCode.FAILURE`; off, it propagates, as a test usually wants.
     """
 
     __slots__ = (
@@ -133,14 +141,18 @@ class Application:
 
             raise SystemExit(application.run())
 
+        The verbosity starts from ``SHELL_VERBOSITY``, and what the run settles
+        on is written back to it, for the processes the command starts.
+
         Raises:
             EventLoopRunningError: If called from async code; await
                 :meth:`run_async` there.
         """
         if _loop_running():
             raise EventLoopRunningError
-        selection = self._selection(argv)
-        style = ConsoleStyle()
+        style = _terminal_style()
+        selection = self._configure(argv, style)
+        os.environ[SHELL_VERBOSITY] = str(style.verbosity.shell_level)
         app = self._build(style, selection.commands)
         try:
             code = cast("int", app(selection.tokens, exit_on_error=False))
@@ -156,12 +168,13 @@ class Application:
         """Run the command ``argv`` names on the running loop; return its exit code.
 
         Output goes through ``style``, a fresh :class:`ConsoleStyle` on the
-        terminal when omitted. A command that exits — ``sys.exit(3)``, or
-        Ctrl-C, which exits ``130`` — ends the run with that code rather than
-        leaving the process.
+        terminal when omitted — its verbosity read from ``SHELL_VERBOSITY``. A
+        style given keeps its own until a global option changes it. A command
+        that exits — ``sys.exit(3)``, or Ctrl-C, which exits ``130`` — ends the
+        run with that code rather than leaving the process.
         """
-        selection = self._selection(argv)
-        style = style if style is not None else ConsoleStyle()
+        style = style if style is not None else _terminal_style()
+        selection = self._configure(argv, style)
         app = self._build(style, selection.commands)
         try:
             code = cast("int", await app.run_async(selection.tokens, exit_on_error=False))
@@ -171,9 +184,11 @@ class Application:
             return _exit_code_of(stop, style)
         return code
 
-    def _selection(self, argv: Sequence[str] | None) -> CommandSelection:
-        tokens = list(argv) if argv is not None else sys.argv[1:]
-        return CommandSelection.of(self._commands.commands(), tokens)
+    def _configure(self, argv: Sequence[str] | None, style: ConsoleStyle) -> CommandSelection:
+        """Apply the global options in ``argv`` to ``style``; select from what is left."""
+        options = GlobalOptions.parse(list(argv) if argv is not None else sys.argv[1:])
+        options.apply(style)
+        return CommandSelection.of(self._commands.commands(), options.remaining)
 
     def _build(self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]) -> App:
         """Build the parser for ``commands``."""
@@ -201,6 +216,7 @@ class Application:
         options = Group("Options", sort_key=0, theme=_THEME)
         for flag in ("--help", "--version") if self._version is not None else ("--help",):
             app[flag].group = (options,)
+        list_global_options(app, options)
         namespaces: dict[str, Group] = {}
         for command in commands:
             namespace = command.namespace
@@ -263,15 +279,20 @@ class Application:
                 return _exit_code(
                     command, await self._invoker.invoke(command, signature, arguments)
                 )
-        except Exception:
+        except Exception as error:
             if not self._catch_exceptions:
                 raise
-            style.error_console.print_exception()
+            render_exception(error, style)
             return ExitCode.FAILURE
 
     def _header(self) -> str:
         name = f"[green]{escape(self._name)}[/green]"
         return name if self._version is None else f"{name} [yellow]{escape(self._version)}[/yellow]"
+
+
+def _terminal_style() -> ConsoleStyle:
+    """Return a style on the terminal, as verbose as ``SHELL_VERBOSITY`` says."""
+    return ConsoleStyle(verbosity=Verbosity.from_shell(os.environ.get(SHELL_VERBOSITY)))
 
 
 def _help_formatter() -> DefaultFormatter:

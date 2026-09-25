@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from typing import cast, final
 
 import pytest
 
 from xtr_console import (
+    SHELL_VERBOSITY,
     Application,
     ApplicationTester,
     CommandArguments,
@@ -17,6 +19,7 @@ from xtr_console import (
     EventLoopRunningError,
     ExitCode,
     InvalidCommandResultError,
+    Verbosity,
     as_command,
     default_registry,
 )
@@ -569,6 +572,308 @@ async def test_no_command_still_lists_every_command(
     _ = await tester.execute([])
 
     assert ("user:create" in tester.display, "list" in tester.display) == (True, True)
+
+
+# ─── global options ──────────────────────────────────────────────
+
+
+def declare_inspect(registry: CommandsLocator) -> None:
+    @as_command("inspect", registry=registry)
+    def inspect_run(io: ConsoleStyle, *, name: str = "") -> int:
+        shown = f"{io.verbosity.name} interactive={io.interactive} name={name}"
+        io.text(shown, verbosity=Verbosity.QUIET)
+        return 0
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["inspect"], "NORMAL interactive=True name="),
+        (["-vvv", "inspect"], "DEBUG interactive=True name="),
+        (["inspect", "-vv", "--name", "ada"], "VERY_VERBOSE interactive=True name=ada"),
+        (["inspect", "--verbose=1"], "VERBOSE interactive=True name="),
+        (["inspect", "-n"], "NORMAL interactive=False name="),
+        (["-q", "inspect"], "QUIET interactive=False name="),
+    ],
+)
+async def test_global_options_reach_the_command_wherever_they_stand(
+    registry: CommandsLocator, tester: ApplicationTester, argv: list[str], expected: str
+) -> None:
+    declare_inspect(registry)
+
+    assert await tester.execute(argv) == ExitCode.SUCCESS
+    assert tester.display.strip() == expected
+
+
+async def test_a_global_option_overrides_the_verbosity_a_run_starts_at(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_inspect(registry)
+
+    _ = await tester.execute(["inspect", "-v"], verbosity=Verbosity.DEBUG)
+
+    assert tester.display.startswith("VERBOSE")
+
+
+async def test_a_quiet_run_prints_nothing_but_still_runs(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_create_user(registry)
+
+    assert await tester.execute(["user:create", "ada@example.com", "-q"]) == ExitCode.SUCCESS
+    assert tester.display == ""
+
+
+async def test_a_quiet_run_answers_questions_with_their_default(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    @as_command("ask", registry=registry)
+    def ask(io: ConsoleStyle) -> int:
+        return 3 if io.ask("Role?", "user") == "user" else 4
+
+    assert await tester.execute(["ask", "-q"], inputs=["admin"]) == 3
+
+
+async def test_a_global_option_after_a_double_dash_belongs_to_the_command(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    @as_command("grep", registry=registry)
+    def grep(io: ConsoleStyle, pattern: str) -> int:
+        io.text(f"{pattern} {io.verbosity.name}")
+        return 0
+
+    _ = await tester.execute(["grep", "--", "-v"])
+
+    assert tester.display.strip() == "-v NORMAL"
+
+
+async def test_ansi_forces_colours_on(registry: CommandsLocator, tester: ApplicationTester) -> None:
+    @as_command("shout", registry=registry)
+    def shout(io: ConsoleStyle) -> int:
+        io.success("done")
+        return 0
+
+    _ = await tester.execute(["shout", "--ansi"])
+
+    assert "\x1b[" in tester.display
+
+
+async def test_a_namespace_still_lists_its_commands_under_a_global_option(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_create_user(registry)
+
+    assert await tester.execute(["-v", "user"]) == ExitCode.SUCCESS
+    assert "user:create" in tester.display
+
+
+async def test_help_lists_the_global_options(tester: ApplicationTester) -> None:
+    _ = await tester.execute(["--help"])
+
+    options = tester.display.partition("Options")[2]
+    for flag in (
+        "--silent",
+        "--quiet",
+        "-q",
+        "--ansi",
+        "--no-interaction",
+        "-n",
+        "--verbose",
+        "-v",
+    ):
+        assert flag in options
+
+
+async def test_a_quiet_help_prints_nothing(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_create_user(registry)
+
+    assert await tester.execute(["--help", "-q"]) == ExitCode.SUCCESS
+    assert tester.display == ""
+
+
+def test_run_forces_colours_on_the_terminal_streams(
+    registry: CommandsLocator, capsys: pytest.CaptureFixture[str]
+) -> None:
+    @as_command("shout", registry=registry)
+    def shout(io: ConsoleStyle) -> int:
+        io.success("done")
+        raise LookupError("then failed")
+
+    _ = Application("acme", commands=registry).run(["shout", "--ansi"])
+
+    captured = capsys.readouterr()
+    assert ("\x1b[" in captured.out, "\x1b[" in captured.err) == (True, True)
+
+
+async def test_a_verbose_run_reports_a_failing_startup_hooks_traceback(
+    registry: CommandsLocator,
+) -> None:
+    declare_inspect(registry)
+
+    def failing() -> None:
+        raise LookupError("startup exploded")
+
+    application = Application("acme", commands=registry)
+    application.on_startup(failing)
+    tester = ApplicationTester(application)
+
+    assert await tester.execute(["inspect", "-v"]) == ExitCode.FAILURE
+    assert "Traceback" in tester.error_display
+    assert "startup exploded" in tester.error_display
+
+
+async def test_a_silent_run_does_not_print_an_exit_message(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    @as_command("leave", registry=registry)
+    def leave() -> int:
+        raise SystemExit("config missing")
+
+    assert await tester.execute(["leave", "--silent"]) == ExitCode.FAILURE
+    assert tester.error_display == ""
+
+
+async def test_a_value_that_is_not_a_verbosity_is_invalid(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_inspect(registry)
+
+    assert await tester.execute(["inspect", "--verbose=4"]) == ExitCode.INVALID
+
+
+# ─── SHELL_VERBOSITY ─────────────────────────────────────────────
+
+
+def test_run_starts_at_the_shell_verbosity(
+    registry: CommandsLocator, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    declare_inspect(registry)
+    monkeypatch.setenv(SHELL_VERBOSITY, "2")
+
+    _ = Application("acme", commands=registry).run(["inspect"])
+
+    assert capsys.readouterr().out.startswith("VERY_VERBOSE")
+
+
+def test_run_writes_the_verbosity_it_settled_on_back_to_the_shell(
+    registry: CommandsLocator,
+) -> None:
+    declare_inspect(registry)
+
+    _ = Application("acme", commands=registry).run(["inspect", "-q"])
+
+    assert os.environ[SHELL_VERBOSITY] == "-1"
+
+
+async def test_run_async_on_the_terminal_starts_at_the_shell_verbosity(
+    registry: CommandsLocator, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    declare_inspect(registry)
+    monkeypatch.setenv(SHELL_VERBOSITY, "3")
+
+    _ = await Application("acme", commands=registry).run_async(["inspect"])
+
+    assert capsys.readouterr().out.startswith("DEBUG")
+    assert os.environ[SHELL_VERBOSITY] == "3"
+
+
+async def test_a_style_given_is_not_overridden_by_the_shell_verbosity(
+    registry: CommandsLocator, tester: ApplicationTester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declare_inspect(registry)
+    monkeypatch.setenv(SHELL_VERBOSITY, "-1")
+
+    _ = await tester.execute(["inspect"])
+
+    assert tester.display.startswith("NORMAL")
+
+
+# ─── exceptions by verbosity ─────────────────────────────────────
+
+
+def declare_failing(registry: CommandsLocator) -> None:
+    @as_command("boom", registry=registry)
+    def boom() -> int:
+        account_marker = "acct-42"
+        raise LookupError(f"no such user in {account_marker[:4]}")
+
+
+async def test_an_exception_is_reported_by_its_message_alone(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_failing(registry)
+
+    _ = await tester.execute(["boom"])
+
+    assert "[ERROR] no such user in acct" in tester.error_display
+    assert "Traceback" not in tester.error_display
+
+
+async def test_a_verbose_run_reports_the_traceback(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_failing(registry)
+
+    _ = await tester.execute(["boom", "-v"])
+
+    assert ("Traceback" in tester.error_display, "LookupError" in tester.error_display) == (
+        True,
+        True,
+    )
+    assert "'acct-42'" not in tester.error_display
+
+
+async def test_a_debug_run_reports_every_frames_locals(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_failing(registry)
+
+    _ = await tester.execute(["boom", "-vvv"])
+
+    assert "'acct-42'" in tester.error_display
+
+
+async def test_a_quiet_run_still_reports_the_error(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_failing(registry)
+
+    assert await tester.execute(["boom", "-q"]) == ExitCode.FAILURE
+    assert "no such user" in tester.error_display
+
+
+async def test_a_silent_run_reports_nothing(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_failing(registry)
+
+    assert await tester.execute(["boom", "--silent"]) == ExitCode.FAILURE
+    assert (tester.display, tester.error_display) == ("", "")
+
+
+async def test_a_silent_run_does_not_report_a_bad_command_line(tester: ApplicationTester) -> None:
+    assert await tester.execute(["nope", "--silent"]) == ExitCode.INVALID
+    assert tester.error_display == ""
+
+
+async def test_chained_errors_are_reported_cause_first(registry: CommandsLocator) -> None:
+    @as_command("boom", registry=registry)
+    def boom() -> int:
+        raise LookupError("command exploded")
+
+    def failing() -> None:
+        raise ValueError("shutdown exploded")
+
+    application = Application("acme", commands=registry)
+    application.on_shutdown(failing)
+    tester = ApplicationTester(application)
+
+    _ = await tester.execute(["boom"])
+
+    errors = tester.error_display
+    assert errors.index("command exploded") < errors.index("shutdown exploded")
 
 
 # ─── the event loop ──────────────────────────────────────────────
