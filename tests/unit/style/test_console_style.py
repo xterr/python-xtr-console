@@ -13,6 +13,7 @@ from xtr_console import (
     ConsoleStyle,
     ExitCode,
     InvalidDefaultError,
+    Verbosity,
     as_command,
 )
 
@@ -24,12 +25,21 @@ if TYPE_CHECKING:
 class Terminal:
     """A style writing to memory, answering questions from ``answers``."""
 
-    def __init__(self, answers: Sequence[str] = (), *, interactive: bool = True) -> None:
+    def __init__(
+        self,
+        answers: Sequence[str] = (),
+        *,
+        interactive: bool = True,
+        verbosity: Verbosity = Verbosity.NORMAL,
+    ) -> None:
         self.output = StringIO()
+        self.errors = StringIO()
         self.style = ConsoleStyle(
             Console(file=self.output, width=60, color_system=None, highlight=False),
+            Console(file=self.errors, width=60, color_system=None, highlight=False),
             input_stream=StringIO("".join(f"{answer}\n" for answer in answers)),
             interactive=interactive,
+            verbosity=verbosity,
         )
 
     @property
@@ -112,6 +122,155 @@ def test_progress_yields_every_item_in_order() -> None:
     terminal = Terminal()
 
     assert list(terminal.style.progress(["a", "b", "c"])) == ["a", "b", "c"]
+
+
+# ─── verbosity ───────────────────────────────────────────────────
+
+
+def write_everything(style: ConsoleStyle) -> None:
+    style.title("Title")
+    style.section("Section")
+    style.text("text")
+    style.listing(["item"])
+    style.table(["Header"], [["cell"]])
+    style.success("done")
+    style.error("failed")
+    _ = list(style.progress(range(3)))
+    style.console.print("raw")
+
+
+@pytest.mark.parametrize("verbosity", [Verbosity.QUIET, Verbosity.SILENT])
+def test_a_quiet_style_writes_nothing(verbosity: Verbosity) -> None:
+    terminal = Terminal(verbosity=verbosity)
+
+    write_everything(terminal.style)
+
+    assert terminal.output.getvalue() == ""
+
+
+def test_a_quiet_style_still_reports_errors() -> None:
+    terminal = Terminal(verbosity=Verbosity.QUIET)
+
+    terminal.style.error_console.print("broken")
+
+    assert terminal.errors.getvalue() == "broken\n"
+
+
+def test_a_silent_style_reports_nothing_at_all() -> None:
+    terminal = Terminal(verbosity=Verbosity.SILENT)
+
+    terminal.style.error_console.print("broken")
+
+    assert terminal.errors.getvalue() == ""
+
+
+def test_a_style_turned_back_to_normal_writes_again() -> None:
+    terminal = Terminal(verbosity=Verbosity.QUIET)
+
+    terminal.style.verbosity = Verbosity.NORMAL
+    terminal.style.text("back")
+
+    assert terminal.lines == ["back"]
+
+
+@pytest.mark.parametrize(
+    ("running", "asked", "written"),
+    [
+        (Verbosity.NORMAL, Verbosity.VERBOSE, False),
+        (Verbosity.VERBOSE, Verbosity.VERBOSE, True),
+        (Verbosity.VERY_VERBOSE, Verbosity.DEBUG, False),
+        (Verbosity.DEBUG, Verbosity.DEBUG, True),
+        (Verbosity.QUIET, Verbosity.NORMAL, False),
+        (Verbosity.QUIET, Verbosity.QUIET, True),
+        (Verbosity.SILENT, Verbosity.QUIET, False),
+    ],
+)
+def test_text_is_written_only_at_its_verbosity_or_above(
+    running: Verbosity, asked: Verbosity, written: bool
+) -> None:
+    terminal = Terminal(verbosity=running)
+
+    terminal.style.text("line", verbosity=asked)
+
+    assert (terminal.lines == ["line"]) is written
+
+
+def test_text_written_through_quiet_leaves_the_rest_quiet() -> None:
+    terminal = Terminal(verbosity=Verbosity.QUIET)
+
+    terminal.style.text("for a script", verbosity=Verbosity.QUIET)
+    terminal.style.text("for a person")
+
+    assert terminal.lines == ["for a script"]
+
+
+@pytest.mark.parametrize(
+    ("verbosity", "expected"),
+    [
+        (Verbosity.SILENT, (True, False, False, False, False)),
+        (Verbosity.QUIET, (False, True, False, False, False)),
+        (Verbosity.NORMAL, (False, False, False, False, False)),
+        (Verbosity.VERBOSE, (False, False, True, False, False)),
+        (Verbosity.VERY_VERBOSE, (False, False, True, True, False)),
+        (Verbosity.DEBUG, (False, False, True, True, True)),
+    ],
+)
+def test_it_reports_how_verbose_it_is(
+    verbosity: Verbosity, expected: tuple[bool, bool, bool, bool, bool]
+) -> None:
+    style = Terminal(verbosity=verbosity).style
+
+    reported = (
+        style.is_silent(),
+        style.is_quiet(),
+        style.is_verbose(),
+        style.is_very_verbose(),
+        style.is_debug(),
+    )
+
+    assert reported == expected
+
+
+@pytest.mark.parametrize(
+    ("verbosity", "shows_count"),
+    [(Verbosity.NORMAL, False), (Verbosity.VERBOSE, True), (Verbosity.DEBUG, True)],
+)
+def test_a_verbose_progress_bar_shows_the_count_done(
+    verbosity: Verbosity, shows_count: bool
+) -> None:
+    terminal = Terminal(verbosity=verbosity)
+
+    _ = list(terminal.style.progress(range(3), description="Counting"))
+
+    assert ("3/3" in terminal.output.getvalue()) is shows_count
+
+
+def test_a_decorated_style_writes_ansi_codes_at_the_same_width() -> None:
+    terminal = Terminal()
+
+    terminal.style.decorated = True
+    terminal.style.text("[bold]loud[/bold]")
+
+    assert ("\x1b[" in terminal.output.getvalue(), terminal.style.console.width) == (True, 60)
+
+
+def test_an_undecorated_style_writes_plain_text() -> None:
+    terminal = Terminal()
+    terminal.style.decorated = True
+
+    terminal.style.decorated = False
+    terminal.style.text("[bold]plain[/bold]")
+
+    assert (terminal.lines[-1], terminal.style.decorated) == ("plain", False)
+
+
+def test_decorating_a_quiet_style_keeps_it_quiet() -> None:
+    terminal = Terminal(verbosity=Verbosity.QUIET)
+
+    terminal.style.decorated = True
+    terminal.style.text("hidden")
+
+    assert terminal.output.getvalue() == ""
 
 
 # ─── questions ───────────────────────────────────────────────────

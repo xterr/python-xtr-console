@@ -8,16 +8,20 @@ from rich import box
 from rich.console import Console
 from rich.errors import MarkupError
 from rich.padding import Padding
-from rich.progress import track
+from rich.progress import Progress
 from rich.prompt import Confirm, Prompt
 from rich.rule import Rule
 from rich.table import Column, Table
 from rich.text import Text
 
 from xtr_console.exception import InvalidDefaultError
+from xtr_console.verbosity import Verbosity
+
+from .decoration import is_decorated, redecorated
+from .progress_columns import progress_columns
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Iterator, Sequence
     from typing import TextIO
 
 __all__ = ["ConsoleStyle", "block"]
@@ -38,9 +42,14 @@ class ConsoleStyle:
     Questions read from ``input_stream`` (the terminal when omitted). When
     ``interactive`` is off, every question returns its default unasked, the
     way a script or a CI job needs.
+
+    ``verbosity`` decides what is written: below :attr:`Verbosity.NORMAL`
+    (``-q``) the output console writes nothing, and at
+    :attr:`Verbosity.SILENT` neither does the error console. The style owns
+    its consoles' ``quiet`` flag.
     """
 
-    __slots__ = ("_console", "_error_console", "_input_stream", "_interactive")
+    __slots__ = ("_console", "_error_console", "_input_stream", "_interactive", "_verbosity")
 
     def __init__(
         self,
@@ -49,12 +58,15 @@ class ConsoleStyle:
         *,
         input_stream: TextIO | None = None,
         interactive: bool = True,
+        verbosity: Verbosity = Verbosity.NORMAL,
     ) -> None:
         """Write to ``console``, and errors about the run to ``error_console``."""
         self._console = console if console is not None else Console()
         self._error_console = error_console if error_console is not None else Console(stderr=True)
         self._input_stream = input_stream
         self._interactive = interactive
+        self._verbosity = verbosity
+        self._quiet_consoles()
 
     @property
     def console(self) -> Console:
@@ -70,6 +82,51 @@ class ConsoleStyle:
     def interactive(self) -> bool:
         """Report whether questions are asked or answered with their default."""
         return self._interactive
+
+    @interactive.setter
+    def interactive(self, interactive: bool) -> None:
+        self._interactive = interactive
+
+    @property
+    def verbosity(self) -> Verbosity:
+        """Return how much the command was told to say."""
+        return self._verbosity
+
+    @verbosity.setter
+    def verbosity(self, verbosity: Verbosity) -> None:
+        self._verbosity = verbosity
+        self._quiet_consoles()
+
+    @property
+    def decorated(self) -> bool:
+        """Report whether output carries ANSI colours and styles."""
+        return is_decorated(self._console)
+
+    @decorated.setter
+    def decorated(self, decorated: bool) -> None:
+        """Force ANSI colours and styles on or off, on both consoles."""
+        self._console = redecorated(self._console, decorated)
+        self._error_console = redecorated(self._error_console, decorated)
+
+    def is_silent(self) -> bool:
+        """Report whether ``--silent`` was asked for."""
+        return self._verbosity is Verbosity.SILENT
+
+    def is_quiet(self) -> bool:
+        """Report whether ``-q`` was asked for — ``--silent`` is not quiet but silent."""
+        return self._verbosity is Verbosity.QUIET
+
+    def is_verbose(self) -> bool:
+        """Report whether ``-v`` or more was asked for."""
+        return self._verbosity >= Verbosity.VERBOSE
+
+    def is_very_verbose(self) -> bool:
+        """Report whether ``-vv`` or more was asked for."""
+        return self._verbosity >= Verbosity.VERY_VERBOSE
+
+    def is_debug(self) -> bool:
+        """Report whether ``-vvv`` was asked for."""
+        return self._verbosity >= Verbosity.DEBUG
 
     # ─── structure ───────────────────────────────────────────────
 
@@ -87,9 +144,19 @@ class ConsoleStyle:
         self._console.print(Rule(style="yellow", characters="-"), width=_width_of(message))
         self._console.print()
 
-    def text(self, message: str) -> None:
-        """Write a line of text."""
-        self._console.print(_markup(message))
+    def text(self, message: str, *, verbosity: Verbosity = Verbosity.NORMAL) -> None:
+        """Write a line of text, if the command runs at ``verbosity`` or above.
+
+        ``Verbosity.VERBOSE`` writes only under ``-v``; ``Verbosity.QUIET``
+        writes even under ``-q``, for output a script reads.
+        """
+        if self._verbosity < verbosity:
+            return
+        quiet, self._console.quiet = self._console.quiet, False
+        try:
+            self._console.print(_markup(message))
+        finally:
+            self._console.quiet = quiet
 
     def listing(self, items: Iterable[str]) -> None:
         """Write an unordered list."""
@@ -140,9 +207,15 @@ class ConsoleStyle:
 
     def progress(
         self, items: Iterable[T], *, total: int | None = None, description: str = "Working"
-    ) -> Iterable[T]:
-        """Yield every item of ``items`` while a progress bar tracks them."""
-        return track(items, description=description, total=total, console=self._console)
+    ) -> Iterator[T]:
+        """Yield every item of ``items`` while a progress bar tracks them.
+
+        ``-v`` adds the count done, ``-vv`` the time elapsed; ``-q`` hides the bar.
+        """
+        columns = progress_columns(self._verbosity)
+        hidden = self._verbosity <= Verbosity.QUIET
+        with Progress(*columns, console=self._console, disable=hidden) as bar:
+            yield from bar.track(items, total=total, description=description)
 
     # ─── questions ───────────────────────────────────────────────
 
@@ -216,6 +289,11 @@ class ConsoleStyle:
     def _block(self, label: str, message: str, style: str) -> None:
         self._console.print(block(label, _markup(message), style))
         self._console.print()
+
+    def _quiet_consoles(self) -> None:
+        """Silence output below normal verbosity, and errors too when silent."""
+        self._console.quiet = self._verbosity < Verbosity.NORMAL
+        self._error_console.quiet = self._verbosity < Verbosity.QUIET
 
 
 def block(label: str, message: Text, style: str) -> Padding:
