@@ -605,7 +605,7 @@ source = { git = "https://github.com/xterr/python-xtr-clock.git#4e612a4300e11ded
 
 [[package]]
 name = "xtr-console"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "cyclopts" },
@@ -631,6 +631,7 @@ dev = [
     { name = "ty" },
     { name = "wireup" },
     { name = "xtr-logging" },
+    { name = "xtr-logging-contracts" },
 ]
 
 [package.metadata]
@@ -653,14 +654,30 @@ dev = [
     { name = "ty", specifier = ">=0.0.83" },
     { name = "wireup", specifier = ">=2.12" },
     { name = "xtr-logging", git = "https://github.com/xterr/python-xtr-logging.git" },
+    { name = "xtr-logging-contracts", git = "https://github.com/xterr/python-xtr-logging-contracts.git" },
 ]
 
 [[package]]
 name = "xtr-logging"
-version = "0.2.0"
-source = { git = "https://github.com/xterr/python-xtr-logging.git#677808f6e99faf2f0abb23a986e584075527a7fa" }
+version = "0.4.0"
+source = { git = "https://github.com/xterr/python-xtr-logging.git#ed725552f8bc439bc86a0ff30dd629e2443b33f9" }
 dependencies = [
     { name = "msgspec" },
     { name = "typing-extensions" },
     { name = "xtr-clock" },
+    { name = "xtr-logging-contracts" },
+    { name = "xtr-service-contracts" },
 ]
+
+[[package]]
+name = "xtr-logging-contracts"
+version = "0.2.0"
+source = { git = "https://github.com/xterr/python-xtr-logging-contracts.git#1f68968815d19884e6de6d2ac98d629d0d0de03b" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+
+[[package]]
+name = "xtr-service-contracts"
+version = "0.1.1"
+source = { git = "https://github.com/xterr/python-xtr-service-contracts.git#d52ff6bf8c85555377be10aa176e1b88a9efa8f8" }
