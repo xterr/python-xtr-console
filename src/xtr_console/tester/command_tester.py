@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, final
 
+from xtr_console.verbosity import Verbosity
+
 from .application_tester import ApplicationTester
 
 if TYPE_CHECKING:
@@ -37,10 +39,11 @@ class CommandTester:
         *,
         inputs: Sequence[str] = (),
         interactive: bool = True,
+        verbosity: Verbosity = Verbosity.NORMAL,
     ) -> int:
         """Run the command with ``args`` and return its exit code."""
         return await self._tester.execute(
-            [self._name, *args], inputs=inputs, interactive=interactive
+            [self._name, *args], inputs=inputs, interactive=interactive, verbosity=verbosity
         )
 
     @property

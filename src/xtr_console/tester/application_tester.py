@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, final
 from rich.console import Console
 
 from xtr_console.style import ConsoleStyle
+from xtr_console.verbosity import Verbosity
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -48,14 +49,20 @@ class ApplicationTester:
         *,
         inputs: Sequence[str] = (),
         interactive: bool = True,
+        verbosity: Verbosity = Verbosity.NORMAL,
     ) -> int:
-        """Run ``argv`` on the running event loop and return the exit code."""
+        """Run ``argv`` on the running event loop and return the exit code.
+
+        ``verbosity`` is where the run starts; a global option in ``argv``,
+        such as ``-vvv``, still changes it. ``SHELL_VERBOSITY`` is not read.
+        """
         output, errors = StringIO(), StringIO()
         style = ConsoleStyle(
             self._console(output),
             self._console(errors),
             input_stream=StringIO("".join(f"{line}\n" for line in inputs)),
             interactive=interactive,
+            verbosity=verbosity,
         )
         try:
             self._status_code = await self._application.run_async(argv, style=style)

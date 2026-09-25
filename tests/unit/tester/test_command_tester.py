@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from xtr_console import Application, CommandsLocator, CommandTester, ConsoleStyle, as_command
+from xtr_console import (
+    Application,
+    CommandsLocator,
+    CommandTester,
+    ConsoleStyle,
+    Verbosity,
+    as_command,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -42,3 +49,18 @@ async def test_standard_error_is_captured_apart(tester: CommandTester) -> None:
     _ = await tester.execute(["ada@example.com"], interactive=False)
 
     assert tester.error_display.strip() == "created"
+
+
+async def test_it_runs_the_command_at_the_verbosity_given() -> None:
+    registry = CommandsLocator()
+
+    @as_command("inspect", registry=registry)
+    def inspect_run(io: ConsoleStyle) -> int:
+        io.text(io.verbosity.name)
+        return 0
+
+    tester = CommandTester(Application("acme", commands=registry), "inspect")
+
+    _ = await tester.execute(verbosity=Verbosity.VERY_VERBOSE)
+
+    assert tester.display.strip() == "VERY_VERBOSE"
