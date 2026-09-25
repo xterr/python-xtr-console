@@ -244,7 +244,9 @@ a parameter after it is an option, taken as `--name`.**
 
 ```python
 @as_command("copy")
-async def copy(io: ConsoleStyle, source: Path, target: Path | None = None, *, force: bool = False) -> int: ...
+async def copy(
+    io: ConsoleStyle, source: Path, target: Path | None = None, *, force: bool = False
+) -> int: ...
 ```
 
 ```text
@@ -296,11 +298,11 @@ from cyclopts import Parameter, validators
 @as_command("export")
 async def export(
     *,
-    force: Annotated[bool, Parameter(alias="-f")] = False,                       # -f
-    depth: Annotated[int, Parameter(alias="-d", count=True)] = 0,                # -ddd → 3
-    cache: Annotated[bool, Parameter(negative="--no-cache")] = True,             # --no-cache
-    since: Annotated[str, Parameter(name="--from")] = "now",                     # --from, not --since
-    token: Annotated[str, Parameter(env_var="ACME_TOKEN")] = "",                 # falls back to $ACME_TOKEN
+    force: Annotated[bool, Parameter(alias="-f")] = False,  # -f
+    depth: Annotated[int, Parameter(alias="-d", count=True)] = 0,  # -ddd → 3
+    cache: Annotated[bool, Parameter(negative="--no-cache")] = True,  # --no-cache
+    since: Annotated[str, Parameter(name="--from")] = "now",  # --from, not --since
+    token: Annotated[str, Parameter(env_var="ACME_TOKEN")] = "",  # falls back to $ACME_TOKEN
     retries: Annotated[int, Parameter(validator=validators.Number(gte=1, lte=5))] = 3,
     note: Annotated[str, Parameter(help="Shown in --help.")] = "",
 ) -> int: ...
@@ -397,10 +399,10 @@ no colour codes.
 ## Asking questions
 
 ```python
-name = io.ask("Display name?", "ada")                          # a default for an empty answer
-role = io.ask("Role?", "user", choices=["user", "admin"])     # asked again until it is a choice
-token = io.ask_hidden("Token?")                                # not echoed
-if io.confirm("Create it?"):                                   # y / n, "no" unless answered
+name = io.ask("Display name?", "ada")  # a default for an empty answer
+role = io.ask("Role?", "user", choices=["user", "admin"])  # asked again until it is a choice
+token = io.ask_hidden("Token?")  # not echoed
+if io.confirm("Create it?"):  # y / n, "no" unless answered
     ...
 ```
 
@@ -447,11 +449,11 @@ from xtr_console import ConsoleStyle, Verbosity, as_command
 
 @as_command("user:sync")
 async def sync(io: ConsoleStyle) -> int:
-    io.text("connecting to the directory", verbosity=Verbosity.VERBOSE)   # -v and up
-    if io.is_debug():                                                    # -vvv
+    io.text("connecting to the directory", verbosity=Verbosity.VERBOSE)  # -v and up
+    if io.is_debug():  # -vvv
         io.table(["Setting", "Value"], settings_rows())
-    io.success("Synchronised")                                           # hidden by -q
-    io.text(report_path, verbosity=Verbosity.QUIET)                      # printed even with -q
+    io.success("Synchronised")  # hidden by -q
+    io.text(report_path, verbosity=Verbosity.QUIET)  # printed even with -q
     return 0
 ```
 
@@ -472,18 +474,18 @@ it. `run_async()` never writes it: several runs may share a process.
 
 ```python
 application = Application(
-    "acme",                            # shown in the usage line and the header
-    "1.2.0",                           # enables --version / -V; omit to have neither
+    "acme",  # shown in the usage line and the header
+    "1.2.0",  # enables --version / -V; omit to have neither
     description="Acme's operations console",
-    catch_exceptions=True,             # report an escaping exception, exit FAILURE
-    backend="asyncio",                 # or "trio"
+    catch_exceptions=True,  # report an escaping exception, exit FAILURE
+    backend="asyncio",  # or "trio"
 )
-application.on_configure(tune)         # tune(io: ConsoleStyle): the global options applied
-application.on_startup(connect)        # sync or async, on the command's event loop
-application.on_shutdown(disconnect)    # runs even when the command raised
+application.on_configure(tune)  # tune(io: ConsoleStyle): the global options applied
+application.on_startup(connect)  # sync or async, on the command's event loop
+application.on_shutdown(disconnect)  # runs even when the command raised
 
-raise SystemExit(application.run())            # on its own event loop, argv from sys.argv
-code = await application.run_async(["user:create", "ada@example.com"])   # on the running one
+raise SystemExit(application.run())  # on its own event loop, argv from sys.argv
+code = await application.run_async(["user:create", "ada@example.com"])  # on the running one
 ```
 
 - Hooks run around a command, not around `--help` or `--version`. Configure hooks run first,
