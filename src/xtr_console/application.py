@@ -39,10 +39,13 @@ if TYPE_CHECKING:
         CommandsLocatorInterface,
     )
 
-__all__ = ["Application", "Hook"]
+__all__ = ["Application", "ConfigureHook", "Hook"]
 
 Hook: TypeAlias = "Callable[[], Awaitable[None] | None]"
 """Run before or after a command; sync or async."""
+
+ConfigureHook: TypeAlias = "Callable[[ConsoleStyle], Awaitable[None] | None]"
+"""Run with a command's style, its global options applied; sync or async."""
 
 _THEME: Final = {
     "cyclopts.border": "yellow",
@@ -75,6 +78,7 @@ class Application:
         "_backend",
         "_catch_exceptions",
         "_commands",
+        "_configure_hooks",
         "_description",
         "_help_formatter",
         "_invoker",
@@ -104,6 +108,7 @@ class Application:
         self._catch_exceptions = catch_exceptions
         self._backend: Literal["asyncio", "trio"] = backend
         self._invoker: CommandInvokerInterface = DefaultCommandInvoker()
+        self._configure_hooks: list[ConfigureHook] = []
         self._startup: list[Hook] = []
         self._shutdown: list[Hook] = []
 
@@ -116,6 +121,14 @@ class Application:
     def commands(self) -> CommandsLocatorInterface:
         """Return the registry the commands are read from."""
         return self._commands
+
+    def on_configure(self, hook: ConfigureHook) -> None:
+        """Run ``hook`` with the command's style, before the startup hooks.
+
+        The style has the global options applied — the place to make anything
+        else follow ``-v``, ``-q`` or ``--no-ansi``, a logger among them.
+        """
+        self._configure_hooks.append(hook)
 
     def on_startup(self, hook: Hook) -> None:
         """Run ``hook`` before the command, on the command's event loop."""
@@ -264,7 +277,7 @@ class Application:
         signature: CommandSignature,
         style: ConsoleStyle,
     ) -> object:
-        """Run the startup hooks, the command, then the shutdown hooks.
+        """Run the configure and startup hooks, the command, then the shutdown hooks.
 
         Every shutdown hook runs, in the order added, once startup has begun —
         whether a startup hook, the command or another shutdown hook raised.
@@ -274,6 +287,10 @@ class Application:
             async with AsyncExitStack() as shutdown:
                 for hook in reversed(self._shutdown):
                     _ = shutdown.push_async_callback(_call, hook)
+                for configure in self._configure_hooks:
+                    configured = configure(style)
+                    if inspect.isawaitable(configured):
+                        await configured
                 for hook in self._startup:
                     await _call(hook)
                 return _exit_code(

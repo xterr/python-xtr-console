@@ -281,10 +281,53 @@ async def test_shutdown_hooks_run_when_the_command_raises(registry: CommandsLoca
     assert events == ["shutdown"]
 
 
+async def test_configure_hooks_get_the_configured_style_before_startup(
+    registry: CommandsLocator,
+) -> None:
+    events: list[str] = []
+
+    @as_command("work", registry=registry)
+    def work() -> int:
+        events.append("command")
+        return 0
+
+    async def configured(style: ConsoleStyle) -> None:
+        events.append(f"configure {style.verbosity.name}")
+
+    application = Application("acme", commands=registry)
+    application.on_configure(configured)
+    application.on_configure(lambda style: events.append(f"then {style.interactive}"))
+    application.on_startup(lambda: events.append("startup"))
+
+    _ = await ApplicationTester(application).execute(["work", "-vv", "-n"])
+
+    assert events == ["configure VERY_VERBOSE", "then False", "startup", "command"]
+
+
+async def test_a_failing_configure_hook_fails_the_run_and_still_shuts_down(
+    registry: CommandsLocator,
+) -> None:
+    events: list[str] = []
+    declare_inspect(registry)
+
+    def failing(style: ConsoleStyle) -> None:
+        del style
+        raise LookupError("configure exploded")
+
+    application = Application("acme", commands=registry)
+    application.on_configure(failing)
+    application.on_shutdown(lambda: events.append("shutdown"))
+    tester = ApplicationTester(application)
+
+    assert await tester.execute(["inspect"]) == ExitCode.FAILURE
+    assert ("configure exploded" in tester.error_display, events) == (True, ["shutdown"])
+
+
 async def test_hooks_do_not_run_for_help(registry: CommandsLocator) -> None:
     events: list[str] = []
     application = Application("acme", commands=registry)
     application.on_startup(lambda: events.append("startup"))
+    application.on_configure(lambda style: events.append("configure"))
 
     _ = await ApplicationTester(application).execute(["--help"])
 
