@@ -46,11 +46,6 @@ dev = [
     "xtr-logging-contracts>=0.2,<0.3",
 ]
 
-# Neither is on PyPI yet; resolve them from their repositories meanwhile.
-[tool.uv.sources]
-xtr-logging = { git = "https://github.com/xterr/python-xtr-logging.git" }
-xtr-logging-contracts = { git = "https://github.com/xterr/python-xtr-logging-contracts.git" }
-
 [build-system]
 requires = ["uv_build>=0.9.18,<0.10.0"]
 build-backend = "uv_build"
