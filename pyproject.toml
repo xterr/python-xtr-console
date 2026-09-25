@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Async-native console applications for Python: commands as functions or classes, declared once and wired by a container."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "Razvan Ceana", email = "razvan@ceana.ro" }
 ]
@@ -42,19 +42,18 @@ dev = [
     "anyio>=4.0",
     "ty>=0.0.83",
     "wireup>=2.12",
-    "xtr-logging>=0.2",
+    "xtr-logging>=0.4",
+    "xtr-logging-contracts>=0.2,<0.3",
 ]
 
-# xtr-logging is not on PyPI yet; resolve it from its repository meanwhile.
+# Neither is on PyPI yet; resolve them from their repositories meanwhile.
 [tool.uv.sources]
 xtr-logging = { git = "https://github.com/xterr/python-xtr-logging.git" }
+xtr-logging-contracts = { git = "https://github.com/xterr/python-xtr-logging-contracts.git" }
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/xtr_console"]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
 
 # ─────────────────────────────────────────────────────────────────
 # basedpyright — typeCheckingMode = "all" sets every report flag to error

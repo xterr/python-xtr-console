@@ -15,10 +15,11 @@ import pytest
 import wireup
 from wireup import AsyncContainer, Injected, injectable
 from wireup.errors import WireupError
-from xtr_logging import LoggerInterface, LoggingConfig
+from xtr_logging import LoggingConfig
 from xtr_logging.config import ConsoleHandlerSpec
 from xtr_logging.integration.wireup import injectables as logging_injectables
 from xtr_logging.processor.processor_registry import ProcessorRegistry
+from xtr_logging_contracts import LoggerInterface
 
 from xtr_console import (
     Application,
