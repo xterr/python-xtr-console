@@ -42,6 +42,7 @@ output is [rich](https://github.com/Textualize/rich).
 - [Arguments and options](#arguments-and-options)
 - [Writing output](#writing-output)
 - [Asking questions](#asking-questions)
+- [Verbosity and global options](#verbosity-and-global-options)
 - [The application](#the-application)
 - [Wiring with a container](#wiring-with-a-container)
 - [Testing your commands](#testing-your-commands)
@@ -134,8 +135,15 @@ acme 1.2.0
 Usage: acme COMMAND
 
    Options
- --help (-h)       Display this message and exit.
- --version (-V)    Display application version.
+ --ansi (--no-ansi)       Force (or disable with --no-ansi) ANSI output.
+ --help (-h)              Display this message and exit.
+ --no-interaction (-n)    Do not ask any interactive question.
+ --quiet (-q)             Only errors are displayed. All other output is
+                          suppressed.
+ --silent                 Do not output any message.
+ --verbose (-v)           Increase the verbosity of messages: -v for more, -vv
+                          for even more, -vvv to debug.
+ --version (-V)           Display application version.
 
    user
  user:create (uc)    Create a user.
@@ -289,7 +297,7 @@ from cyclopts import Parameter, validators
 async def export(
     *,
     force: Annotated[bool, Parameter(alias="-f")] = False,                       # -f
-    verbose: Annotated[int, Parameter(alias="-v", count=True)] = 0,              # -vvv → 3
+    depth: Annotated[int, Parameter(alias="-d", count=True)] = 0,                # -ddd → 3
     cache: Annotated[bool, Parameter(negative="--no-cache")] = True,             # --no-cache
     since: Annotated[str, Parameter(name="--from")] = "now",                     # --from, not --since
     token: Annotated[str, Parameter(env_var="ACME_TOKEN")] = "",                 # falls back to $ACME_TOKEN
@@ -301,7 +309,7 @@ async def export(
 | `Parameter(...)` | Effect |
 | --- | --- |
 | `alias="-f"` | a short name alongside the long one |
-| `count=True` | on an `int`: each repetition adds one — `-vvv` is `3` |
+| `count=True` | on an `int`: each repetition adds one — `-ddd` is `3` |
 | `negative="--no-cache"` | a flag that can also be switched off; flags have none by default |
 | `name="--from"` | the option's name on the command line, when the parameter's cannot be it |
 | `env_var="ACME_TOKEN"` | read the variable when the option is left out; the command line wins |
@@ -311,7 +319,9 @@ async def export(
 The full list is in the [cyclopts documentation](https://cyclopts.readthedocs.io/en/latest/api.html#cyclopts.Parameter).
 
 A parameter named `help` would become `--help` and take the flag over, so it is refused as the
-command is built; rename it on the command line with `Parameter(name="--topic")`. More parameter kinds work as
+command is built; rename it on the command line with `Parameter(name="--topic")`. So is an option
+answering to a [global option](#verbosity-and-global-options) — `quiet`, `verbose`, `silent`,
+`alias="-v"`, `alias="-n"`, `negative="--no-ansi"` and the like. More parameter kinds work as
 they do in cyclopts: `**kwargs` collects unknown `--name value` pairs, a dataclass parameter
 `point: Point` is filled from `--point.x 3 --point.y 4`, and a parameter without an annotation
 takes the type of its default, or is a string when it has none.
@@ -355,11 +365,11 @@ async def report(io: ConsoleStyle) -> int:
 | --- | --- |
 | `title(message)` | a heading underlined with `=` |
 | `section(message)` | a smaller heading underlined with `-` |
-| `text(message)` | a line |
+| `text(message, verbosity=Verbosity.NORMAL)` | a line — only when the run is at `verbosity` or above |
 | `listing(items)` | a bulleted list |
 | `table(headers, rows)` | aligned columns under a header |
 | `newline(count=1)` | blank lines |
-| `progress(items, total=None, description="Working")` | yields every item while a progress bar tracks them |
+| `progress(items, total=None, description="Working")` | yields every item while a progress bar tracks them; `-v` adds the count done, `-vv` the time elapsed |
 | `success(message)` | `[OK]` on a green band |
 | `error(message)` | `[ERROR]` on a red band |
 | `warning(message)` | `[WARNING]` on a yellow band |
@@ -409,6 +419,55 @@ defaults to `False`, so running out of input declines rather than agrees; pass `
 where agreeing is the safe answer. A default outside the `choices` raises `InvalidDefaultError`
 before anything is asked. Piped answers are read one per line, in the order asked.
 
+## Verbosity and global options
+
+Every command takes these options, before or after its name —
+`acme -vvv user:create ada` and `acme user:create ada -vvv` are the same run:
+
+| Option | Verbosity | Effect |
+| --- | --- | --- |
+| `--silent` | `SILENT` | nothing is printed, not even errors; no questions are asked |
+| `-q`, `--quiet` | `QUIET` | only errors are printed; no questions are asked |
+| | `NORMAL` | an error is reported by its message |
+| `-v`, `--verbose`, `--verbose=1` | `VERBOSE` | an error is reported with its traceback |
+| `-vv`, `--verbose=2` | `VERY_VERBOSE` | |
+| `-vvv`, `--verbose=3` | `DEBUG` | the traceback shows every frame and its local variables |
+| `-n`, `--no-interaction` | | every question is answered with its default |
+| `--ansi`, `--no-ansi` | | colours and styles forced on, or off |
+
+`--silent` wins over `-q`, which wins over `-v`; `--ansi` wins over `--no-ansi`. Everything after
+a bare `--` belongs to the command: `acme grep -- -v` passes `-v` as an argument. A command option
+cannot claim one of these names — see [Fine-tuning](#fine-tuning-with-parameter).
+
+A command reads the verbosity from its style and says more when asked to:
+
+```python
+from xtr_console import ConsoleStyle, Verbosity, as_command
+
+
+@as_command("user:sync")
+async def sync(io: ConsoleStyle) -> int:
+    io.text("connecting to the directory", verbosity=Verbosity.VERBOSE)   # -v and up
+    if io.is_debug():                                                    # -vvv
+        io.table(["Setting", "Value"], settings_rows())
+    io.success("Synchronised")                                           # hidden by -q
+    io.text(report_path, verbosity=Verbosity.QUIET)                      # printed even with -q
+    return 0
+```
+
+`io.verbosity` is the `Verbosity` itself, ordered from `SILENT` to `DEBUG`;
+`is_silent()`, `is_quiet()`, `is_verbose()`, `is_very_verbose()` and `is_debug()` ask the usual
+questions — `is_quiet()` is `-q` alone, not `--silent`. Under
+`-q` everything the style writes is dropped — `io.console.print(...)` and help included — except
+`text(..., verbosity=Verbosity.QUIET)`, which is how a command prints what a script reads.
+`io.error_console` still writes, so errors show; under `--silent` it does not.
+
+**`SHELL_VERBOSITY`.** When the application builds its own style — `run()`, or `run_async()`
+without `style=` — the verbosity starts from the environment variable, `-2` (silent) to `3`
+(debug); an option on the command line wins. `run()` writes the verbosity it settled on back
+to `SHELL_VERBOSITY`, so a process the command starts — another console, a worker — inherits
+it. `run_async()` never writes it: several runs may share a process.
+
 ## The application
 
 ```python
@@ -416,9 +475,10 @@ application = Application(
     "acme",                            # shown in the usage line and the header
     "1.2.0",                           # enables --version / -V; omit to have neither
     description="Acme's operations console",
-    catch_exceptions=True,             # render an escaping exception, exit FAILURE
+    catch_exceptions=True,             # report an escaping exception, exit FAILURE
     backend="asyncio",                 # or "trio"
 )
+application.on_configure(tune)         # tune(io: ConsoleStyle): the global options applied
 application.on_startup(connect)        # sync or async, on the command's event loop
 application.on_shutdown(disconnect)    # runs even when the command raised
 
@@ -426,12 +486,16 @@ raise SystemExit(application.run())            # on its own event loop, argv fro
 code = await application.run_async(["user:create", "ada@example.com"])   # on the running one
 ```
 
-- Hooks run around a command, not around `--help` or `--version`. Once startup has begun, every
-  shutdown hook runs, in the order added — even when a startup hook, the command or another
-  shutdown hook raised.
-- With `catch_exceptions` on, an exception escaping a command or a hook prints its traceback to
-  standard error and the run exits `1`; when a shutdown hook fails after the command did, both
-  errors are shown. Off, the exception propagates — what a test usually wants.
+- Hooks run around a command, not around `--help` or `--version`. Configure hooks run first,
+  each given the command's style with its global options applied — the place to make anything
+  else follow `-v` or `--no-ansi` — then the startup hooks. Once they have begun, every
+  shutdown hook runs, in the order added — even when a configure or startup hook, the command
+  or another shutdown hook raised.
+- With `catch_exceptions` on, an exception escaping a command or a hook is reported on standard
+  error and the run exits `1`: its message in an `[ERROR]` block, its traceback with `-v`, every
+  frame's local variables with `-vvv`. When a shutdown hook fails after the command did, both
+  errors are shown, the command's first. Off, the exception propagates — what a test usually
+  wants.
 - `run()` starts its own event loop, so called from async code it raises
   `EventLoopRunningError`: await `run_async()` there. Several `run_async()` calls may run concurrently on one application.
 - `backend="trio"` needs the `trio` extra.
@@ -518,6 +582,47 @@ def run() -> None:
 Without a container, a command asking for `Injected[...]` — or a class whose constructor needs
 arguments — raises `MissingContainerError` when it runs.
 
+### Logging with xtr-logging
+
+When [xtr-logging](https://github.com/xterr/python-xtr-logging) is installed and the container
+provides its `LoggerFactory` — its own wireup integration does — every console handler follows
+each command, with nothing to wire:
+
+```python
+from xtr_logging.integration import wireup as logging_integration
+
+container = wireup.create_async_container(
+    injectables=[
+        services,
+        *logging_integration.injectables(LOGGING_CONFIG),
+        *console.injectables(Application("acme", "1.2.0")),
+    ],
+)
+```
+
+| Command line | Console handlers print |
+| --- | --- |
+| `--silent` | nothing |
+| `-q` | errors and up |
+| | warnings and up |
+| `-v` | notices and up |
+| `-vv` | info and up |
+| `-vvv` | everything |
+
+They are set before the startup hooks run, so what those log follows the flags too. They write
+to the command's error output — what a tester captures as `error_display` — coloured only when
+that output is, so `--ansi` and `--no-ansi` apply to them as well. File, syslog and other
+handlers keep their own levels. The handlers are shared by the whole factory: two commands run
+concurrently in one process, at different verbosities, override each other.
+
+Without a container, one line does the same:
+
+```python
+from xtr_console.integration.xtr_logging import follow
+
+application.on_configure(lambda io: follow(factory, io))
+```
+
 ## Testing your commands
 
 A tester runs the application on the test's event loop and captures what it prints as plain
@@ -557,6 +662,7 @@ async def test_it_asks_before_deleting(application: Application) -> None:
 | `ApplicationTester(application)` | `execute(argv)` runs a whole command line — `--help` included |
 | `inputs=[...]` | answers the questions in the order asked, one line each |
 | `interactive=False` | answers every question with its default |
+| `verbosity=Verbosity.DEBUG` | the verbosity the run starts at — or pass `-vvv` in the command line; `SHELL_VERBOSITY` is not read |
 | `display` / `error_display` | what the last run printed to standard output / standard error |
 | `status_code` | the last run's exit code, `None` before the first |
 | `width=` | the width output is rendered at, `100` by default |
@@ -583,7 +689,7 @@ Every error derives from `ConsoleError` and carries its data as typed attributes
 
 | Error | Raised when |
 | --- | --- |
-| `CommandSignatureError` | A command class has no `__call__`, a command is a generator, is not annotated to return an `int`, has a parameter that would take `--help` over, an annotation that cannot be evaluated, or a container parameter that cannot be passed by keyword |
+| `CommandSignatureError` | A command class has no `__call__`, a command is a generator, is not annotated to return an `int`, has a parameter that would take `--help` or a global option over, an annotation that cannot be evaluated, or a container parameter that cannot be passed by keyword |
 | `InvalidCommandNameError` | A name or alias is empty, holds whitespace, or starts with `-` |
 | `DuplicateCommandError` | A name or alias is claimed twice, by two commands or by one |
 | `InvalidCommandResultError` | A command returned something other than an `int` |
@@ -602,13 +708,16 @@ A command line that does not parse is not an exception: it is reported, and the 
 xtr_console/
 ├── application.py        parses the command line and runs the command on one event loop
 ├── exit_code.py          SUCCESS, FAILURE, INVALID
+├── verbosity.py          SILENT, QUIET, NORMAL, VERBOSE, VERY_VERBOSE, DEBUG
+├── global_options.py     -v/-vv/-vvv, -q, --silent, -n, --ansi/--no-ansi, read off every command line
 ├── decorator/            @as_command
 ├── command/              what was declared, who fills which parameter, and how it is called
-├── style/                ConsoleStyle
+├── style/                ConsoleStyle, and how an escaping exception is reported
 ├── tester/               ApplicationTester, CommandTester
 ├── exception/            one error per module, all a ConsoleError
 └── integration/
-    └── wireup.py         the application and command classes from a wireup container
+    ├── wireup.py         the application and command classes from a wireup container
+    └── xtr_logging.py    xtr-logging's console handlers following each command
 ```
 
 ## Development
