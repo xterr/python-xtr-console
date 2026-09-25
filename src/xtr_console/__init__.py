@@ -39,10 +39,12 @@ from .exception import (
 from .exit_code import ExitCode
 from .style import ConsoleStyle
 from .tester import ApplicationTester, CommandTester
+from .verbosity import SHELL_VERBOSITY, Verbosity
 
 __version__ = version("xtr-console")
 
 __all__ = [
+    "SHELL_VERBOSITY",
     "Application",
     "ApplicationAlreadyWiredError",
     "ApplicationTester",
@@ -67,6 +69,7 @@ __all__ = [
     "InvalidDefaultError",
     "MissingContainerError",
     "UnregisteredCommandError",
+    "Verbosity",
     "__version__",
     "as_command",
     "default_registry",
