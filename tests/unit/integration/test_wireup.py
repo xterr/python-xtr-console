@@ -15,6 +15,10 @@ import pytest
 import wireup
 from wireup import AsyncContainer, Injected, injectable
 from wireup.errors import WireupError
+from xtr_logging import LoggerInterface, LoggingConfig
+from xtr_logging.config import ConsoleHandlerSpec
+from xtr_logging.integration.wireup import injectables as logging_injectables
+from xtr_logging.processor.processor_registry import ProcessorRegistry
 
 from xtr_console import (
     Application,
@@ -157,6 +161,21 @@ async def test_a_function_receives_what_the_container_provides(tester: Applicati
     assert tester.display.strip() == "ada@example.com admin=True open=True"
 
 
+async def test_global_options_leave_what_the_container_provides_in_place(
+    tester: ApplicationTester,
+) -> None:
+    _ = await tester.execute(["-vvv", "user:import", "users.csv", "-n"])
+
+    assert tester.display.strip() == "hello users.csv open=True"
+
+
+async def test_a_quiet_run_through_the_container_still_releases_its_scope(
+    tester: ApplicationTester,
+) -> None:
+    assert await tester.execute(["user:create", "ada@example.com", "-q"]) == 0
+    assert (tester.display, [made.open for made in sessions]) == ("", [False])
+
+
 async def test_a_scoped_dependency_is_closed_when_the_command_returns(
     tester: ApplicationTester,
 ) -> None:
@@ -251,6 +270,58 @@ async def test_a_dependency_nothing_provides_is_refused_naming_the_command(
 
 
 # ─── optional ────────────────────────────────────────────────────
+
+
+# ─── xtr-logging ─────────────────────────────────────────────────
+
+LOGGED = CommandsLocator()
+
+
+@as_command("audit", registry=LOGGED)
+async def audit(logger: Injected[LoggerInterface]) -> int:
+    for level in ("debug", "info", "notice", "warning", "error"):
+        message = f"at {level}"
+        logger.log(level, message)
+    return 0
+
+
+@pytest.fixture
+async def logged() -> AsyncIterator[ApplicationTester]:
+    config = LoggingConfig(handlers={"console": ConsoleHandlerSpec()})
+    made = wireup.create_async_container(
+        injectables=[
+            *logging_injectables(config, registry=ProcessorRegistry()),
+            *injectables(Application("acme", commands=LOGGED, catch_exceptions=False)),
+        ],
+    )
+    yield ApplicationTester(await made.get(Application))
+    await made.close()
+
+
+@pytest.mark.parametrize(
+    ("argv", "printed"),
+    [
+        ([], ["warning", "error"]),
+        (["-q"], ["error"]),
+        (["-v"], ["notice", "warning", "error"]),
+        (["-vvv"], ["debug", "info", "notice", "warning", "error"]),
+        (["--silent"], []),
+    ],
+)
+async def test_the_containers_console_logs_follow_each_command(
+    logged: ApplicationTester, argv: list[str], printed: list[str]
+) -> None:
+    _ = await logged.execute(["audit", *argv])
+
+    levels = ["debug", "info", "notice", "warning", "error"]
+    assert [level for level in levels if f"at {level}" in logged.error_display] == printed
+
+
+async def test_each_run_logs_to_its_own_error_output(logged: ApplicationTester) -> None:
+    _ = await logged.execute(["audit", "-vvv"])
+    _ = await logged.execute(["audit"])
+
+    assert "at debug" not in logged.error_display
 
 
 def test_the_core_never_imports_wireup() -> None:

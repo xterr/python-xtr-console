@@ -42,6 +42,10 @@ enters a scope of its own: a ``lifetime="scoped"`` dependency there is built
 for that run and released when it finishes, even if it raised. A constructor
 asking for a scoped dependency is refused as the container is built.
 
+With xtr-logging installed and a ``LoggerFactory`` in the container, its
+console handlers follow every command — its verbosity, its error output, its
+colours — before the startup hooks run.
+
 .. note::
    Every annotation wireup reads is resolved as the container is built:
    import what a constructor names at runtime, not under ``TYPE_CHECKING``.
@@ -60,7 +64,7 @@ from typing_extensions import override
 from wireup import AsyncContainer, ScopedAsyncContainer
 from wireup.errors import UnknownServiceRequestedError
 
-from xtr_console.application import Application
+from xtr_console.application import Application, ConfigureHook
 from xtr_console.command import (
     CommandArguments,
     CommandDescriptor,
@@ -73,6 +77,7 @@ from xtr_console.exception import (
     CommandSignatureError,
     UnregisteredCommandError,
 )
+from xtr_console.style import ConsoleStyle
 
 __all__ = ["injectables"]
 
@@ -97,9 +102,14 @@ def injectables(application: Application) -> list[object]:
 
     def provide(container: AsyncContainer) -> Application:
         wired = application.invoker
-        if isinstance(wired, _ContainerInvoker) and wired.container is not container:
-            raise ApplicationAlreadyWiredError(application.name)
+        if isinstance(wired, _ContainerInvoker):
+            if wired.container is not container:
+                raise ApplicationAlreadyWiredError(application.name)
+            return application
         application.use_invoker(_ContainerInvoker(container))
+        following = _logging_follower(container)
+        if following is not None:
+            application.on_configure(following)
         return application
 
     provided: list[object] = [wireup.injectable(provide)]
@@ -109,6 +119,29 @@ def injectables(application: Application) -> list[object]:
         if isinstance(command.target, type)
     )
     return provided
+
+
+def _logging_follower(container: AsyncContainer) -> ConfigureHook | None:
+    """Return what makes xtr-logging's console handlers follow each command.
+
+    ``None`` when xtr-logging is not installed. Installed, the hook does
+    nothing unless the container provides a ``LoggerFactory``.
+    """
+    try:
+        from xtr_logging import LoggerFactory  # noqa: PLC0415 — optional; detected, not required.
+
+        from .xtr_logging import follow  # noqa: PLC0415
+    except ImportError:
+        return None
+
+    async def following(style: ConsoleStyle) -> None:
+        try:
+            factory = await container.get(LoggerFactory)
+        except UnknownServiceRequestedError:
+            return
+        follow(factory, style)
+
+    return following
 
 
 @final
