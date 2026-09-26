@@ -12,12 +12,13 @@ built-in.
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Final
 
 from rich.markup import escape
 from rich.text import Text
 
-from .command.command_descriptor import CommandDescriptor
+from .command.command_descriptor import CommandDescriptor, function_of
 from .exit_code import ExitCode
 from .style import ConsoleStyle  # noqa: TC001 — evaluated at runtime by CommandSignature.of.
 
@@ -130,8 +131,22 @@ def _print_group(io: ConsoleStyle, commands: Sequence[CommandDescriptor]) -> Non
         line = Text("  ")
         _ = line.append(label, style="green")
         _ = line.append(padding)
-        _ = line.append(command.description or "")
+        _ = line.append(_summary(command))
         io.console.print(line)
+
+
+def _summary(command: CommandDescriptor) -> str:
+    """Return what a listing says of ``command``, as its ``--help`` page does.
+
+    Its ``description`` when one was given; else the first line of the docstring of the
+    function that runs — a class's ``__call__`` — or failing that of the class.
+    """
+    if command.description:
+        return command.description
+    target = command.target
+    documented = function_of(target) if isinstance(target, type) else target
+    docstring = inspect.getdoc(documented) or inspect.getdoc(target) or ""
+    return docstring.strip().split("\n", 1)[0]
 
 
 def _label(command: CommandDescriptor) -> str:

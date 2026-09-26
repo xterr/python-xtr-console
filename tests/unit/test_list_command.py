@@ -219,3 +219,32 @@ async def test_the_builtin_list_appears_in_the_help(
 
     assert "list" in tester.display
     assert "List commands" in tester.display
+
+
+@pytest.mark.anyio
+async def test_list_falls_back_to_the_docstring_summary() -> None:
+    commands = CommandsLocator()
+
+    @as_command("report:daily", registry=commands)
+    def daily() -> int:
+        """Print the daily report.
+
+        More detail that the listing leaves out.
+        """
+        return 0
+
+    @as_command("report:weekly", registry=commands)
+    class Weekly:
+        """Print the weekly report."""
+
+        def __call__(self) -> int:
+            return 0
+
+    del daily, Weekly
+    tester = ApplicationTester(Application("acme", commands=commands))
+
+    _ = await tester.execute(["list"])
+
+    assert "Print the daily report." in tester.display
+    assert "Print the weekly report." in tester.display
+    assert "More detail" not in tester.display
