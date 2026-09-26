@@ -24,7 +24,8 @@ session.
   application.
 - 🧱 **Functions or classes** — a class is built only when its command runs, bare or by a
   container.
-- 🧩 **Container-ready** — with the `wireup` extra, the container provides the application;
+- 🧩 **Container-ready** — with the `di` extra, an
+  [xtr-dependency-injection](../xtr-dependency-injection) kernel provides the application;
   command classes are singletons it builds, and `Injected[...]` parameters are filled per run.
 - 🎨 **One look** — `ConsoleStyle` gives every command the same titles, outcome blocks, tables,
   progress bars and questions.
@@ -44,7 +45,7 @@ output is [rich](https://github.com/Textualize/rich).
 - [Asking questions](#asking-questions)
 - [Verbosity and global options](#verbosity-and-global-options)
 - [The application](#the-application)
-- [Wiring with a container](#wiring-with-a-container)
+- [Kernel / bundle](#kernel--bundle)
 - [Testing your commands](#testing-your-commands)
 - [Errors](#errors)
 
@@ -52,7 +53,7 @@ output is [rich](https://github.com/Textualize/rich).
 
 ```sh
 uv add xtr-console              # the whole core
-uv add "xtr-console[wireup]"    # + commands wired by a wireup container
+uv add "xtr-console[di]"        # + a ConsoleBundle for xtr-dependency-injection
 uv add "xtr-console[trio]"      # + running commands on trio instead of asyncio
 ```
 
@@ -509,13 +510,28 @@ code = await application.run_async(["user:create", "ada@example.com"])  # on the
   it — but not the other commands.
 - `help_formatter=` takes any cyclopts help formatter, for a different help layout.
 
-## Wiring with a container
+## Kernel / bundle
 
-With the `wireup` extra, commands ask for what they need the way wireup always does, and import
-nothing from this library's integration:
+An application using [xtr-dependency-injection](../xtr-dependency-injection) lists
+`ConsoleBundle` in its `app/bundles.py` and configures it with `@configure`. Commands ask
+for what they need the way any container-injected service does; import nothing from this
+library's integration:
+
+```sh
+uv add "xtr-console[di]"
+```
 
 ```python
-from wireup import Injected
+# app/bundles.py
+from xtr_console.bundle import ConsoleBundle
+
+BUNDLES = {ConsoleBundle: {"all": True}}
+```
+
+```python
+# app/commands/users.py
+from xtr_dependency_injection import Injected
+from xtr_console import ConsoleStyle, ExitCode, as_command
 
 
 @as_command("user:create")
@@ -529,78 +545,49 @@ class ImportUsers:
     async def __call__(self, io: ConsoleStyle, path: Path, session: Injected[Session]) -> int: ...
 ```
 
-One call where the container is built, and the application comes out of it:
-
 ```python
-import asyncio
+# app/__main__.py
+from xtr_console.bundle import console
+from xtr_dependency_injection import Kernel
 
-import wireup
-
-import acme.commands  # noqa: F401 — importing declares the commands
-from acme import services
-from xtr_console import Application
-from xtr_console.integration import wireup as console
-
-
-async def main() -> int:
-    container = wireup.create_async_container(
-        injectables=[services, *console.injectables(Application("acme", "1.2.0"))],
-    )
-    try:
-        application = await container.get(Application)
-        return await application.run_async()
-    finally:
-        await container.close()
-
-
-def run() -> None:
-    raise SystemExit(asyncio.run(main()))
+kernel = Kernel("app")
+raise SystemExit(kernel.run(console))
 ```
 
-- `injectables(application)` registers the application — wired to build and call its commands
-  through the container — and every command class declared so far. Configure the application
-  as it should run before handing it over; any service can then take an `Application` like any
-  other dependency.
-- A command class is a **singleton**, and needs no `@injectable` of its own. It is built on its
-  first run and kept for the container's life, so its constructor takes what lives as long as
-  it does. A constructor asking for a `lifetime="scoped"` dependency is refused as the
-  container is built.
-- Anything one run needs goes on the command as `Injected[...]`. Each run enters a scope of its
-  own: a scoped dependency is built for that run and released when it finishes, even if it
-  raised. `Injected[...]` parameters never reach the command line, and may sit anywhere among
-  the arguments.
-- Async factories resolve — the container is awaited on the command's event loop.
-- Import the modules declaring command classes **before** calling `injectables()`; a class
-  declared afterwards raises `UnregisteredCommandError` when it runs.
-- Everything wireup offers works as usual: `Inject(config="dsn")`, qualifiers, interfaces
-  registered with `as_type`, and a constructor taking the `Application` itself. When something
-  cannot be provided, wireup's error names the command's function or class.
-- One application per container, and `injectables()` once per container: the application is
-  bound to the container that provides it — a second container providing it raises
-  `ApplicationAlreadyWiredError` — and registering twice is refused by wireup.
-- The container must be an async one. `ConsoleStyle` is not in it: take it as a plain
-  `ConsoleStyle` parameter, not `Injected[ConsoleStyle]`.
+The bundle registers an `Application` under the container. Each active kernel has its own
+per-instance `CommandsLocator`, so two kernels in one process see disjoint command sets. A
+command class is a container-built service (a `console.command` tag names each one), and a
+function command is bound with `bind_callable` on every run — each run enters a scope of its
+own, so a `lifetime="scoped"` `Injected[...]` is built for that run and released when it
+ends. When something the container cannot provide is asked for, the compile-time check names
+the command.
 
-Without a container, a command asking for `Injected[...]` — or a class whose constructor needs
-arguments — raises `MissingContainerError` when it runs.
+| `ConsoleConfig` field | Meaning |
+| --- | --- |
+| `name` | The application's name. `None` uses `kernel.name` |
+| `version` | Shown in the help header and by `--version`. `None` disables both |
+| `description` | One-line description shown in the help header |
+| `catch_exceptions` | Report an exception escaping a command and exit `FAILURE` instead of propagating |
+
+The bundle also ships three debug commands the kernel's report drives:
+
+| Command | What it prints |
+| --- | --- |
+| `debug:bundles` | Every bundle the kernel considered — source, state, class, required peers |
+| `debug:config [bundle]` | Every bundle's resolved config, or one when named |
+| `debug:container [--tag TAG]` | Every compiled definition, or the ones tagged `TAG` |
+
+Without a container, everything from the [Wiring section](#writing-output) above still works
+— a command with only command-line and `ConsoleStyle` parameters runs unchanged. A command
+asking for `Injected[...]`, or a class whose constructor needs arguments, raises
+`MissingContainerError` when it runs.
 
 ### Logging with xtr-logging
 
-When [xtr-logging](https://github.com/xterr/python-xtr-logging) is installed and the container
-provides its `LoggerFactory` — its own wireup integration does — every console handler follows
-each command, with nothing to wire:
-
-```python
-from xtr_logging.integration import wireup as logging_integration
-
-container = wireup.create_async_container(
-    injectables=[
-        services,
-        *logging_integration.injectables(LOGGING_CONFIG),
-        *console.injectables(Application("acme", "1.2.0")),
-    ],
-)
-```
+When [xtr-logging](https://github.com/xterr/python-xtr-logging) is active alongside the
+console bundle — its `LoggingBundle` is a soft dependency of `ConsoleBundle` — every console
+handler follows each command, with nothing to wire: the bundle detects the logging bundle at
+build time and adds an `on_configure` hook that calls `follow(factory, io)` for each command.
 
 | Command line | Console handlers print |
 | --- | --- |
@@ -672,17 +659,15 @@ async def test_it_asks_before_deleting(application: Application) -> None:
 To test commands apart from everything else declared in the process, declare them into their
 own `CommandsLocator` and pass it as `commands=`.
 
-**With a container**, build the application and the container per test — every singleton,
-command classes included, then starts fresh — and drive the application the container provides:
+**With a kernel**, build the kernel per test — every singleton, command classes included,
+then starts fresh — and drive the application the container provides:
 
 ```python
 @pytest.fixture
 async def tester() -> AsyncIterator[ApplicationTester]:
-    container = wireup.create_async_container(
-        injectables=[services, *console.injectables(Application("acme", catch_exceptions=False))],
-    )
-    yield ApplicationTester(await container.get(Application))
-    await container.close()
+    kernel = Kernel("app", env="test")
+    async with await kernel.boot() as booted:
+        yield ApplicationTester(await booted.container.get(Application))
 ```
 
 ## Errors
@@ -698,8 +683,6 @@ Every error derives from `ConsoleError` and carries its data as typed attributes
 | `InvalidDefaultError` | A question's default is not one of its `choices` |
 | `EventLoopRunningError` | `Application.run()` was called from async code |
 | `MissingContainerError` | A command needs a container, and none is wired |
-| `UnregisteredCommandError` | A command class was declared after `injectables()` was called |
-| `ApplicationAlreadyWiredError` | A second container provided an application already wired to another |
 
 A command line that does not parse is not an exception: it is reported, and the run exits
 `INVALID`.
@@ -717,8 +700,8 @@ xtr_console/
 ├── style/                ConsoleStyle, and how an escaping exception is reported
 ├── tester/               ApplicationTester, CommandTester
 ├── exception/            one error per module, all a ConsoleError
+├── bundle/               ConsoleBundle for xtr-dependency-injection
 └── integration/
-    ├── wireup.py         the application and command classes from a wireup container
     └── xtr_logging.py    xtr-logging's console handlers following each command
 ```
 

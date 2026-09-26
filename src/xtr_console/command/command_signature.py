@@ -39,7 +39,7 @@ class CommandSignature:
       after it is an *option*, taken as ``--name``.
     - the **console**: a parameter annotated :class:`ConsoleStyle` receives
       the style the application writes through.
-    - a **container**: a parameter annotated for injection — wireup's
+    - a **container**: a parameter annotated for injection —
       ``Injected[T]`` — is left for the container, when one is wired.
 
     Annotations are evaluated here, against the module declaring the
@@ -252,7 +252,7 @@ def _supplied_by_container(annotation: object) -> bool:
 @cache
 def _container_marker() -> type | None:
     try:
-        from wireup.ioc.types import InjectableType  # noqa: PLC0415
+        from xtr_dependency_injection import Autowire  # noqa: PLC0415
     except ImportError:
         return None
-    return InjectableType
+    return Autowire

@@ -1,7 +1,7 @@
 """xtr-logging's console handlers following the command they log for.
 
 A container providing both the application and a ``LoggerFactory`` wires
-this on its own — see :mod:`xtr_console.integration.wireup`. Without one::
+this on its own — see :mod:`xtr_console.bundle`. Without one::
 
     from xtr_console.integration.xtr_logging import follow
 

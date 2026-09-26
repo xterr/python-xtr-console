@@ -1,6 +1,6 @@
 [project]
 name = "xtr-console"
-version = "1.0.1"
+version = "1.1.0"
 description = "Async-native console applications for Python: commands as functions or classes, declared once and wired by a container."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Razvan Ceana", email = "razvan@ceana.ro" }
 ]
-keywords = ["cli", "console", "command", "async", "cyclopts", "wireup"]
+keywords = ["cli", "console", "command", "async", "cyclopts", "xtr-dependency-injection"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -27,8 +27,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-wireup = [
-    "wireup>=2.12",
+di = [
+    "xtr-dependency-injection>=1.0,<2",
 ]
 trio = [
     "cyclopts[trio]>=5.0,<6",
@@ -42,7 +42,7 @@ dev = [
     "pytest-cov>=5",
     "anyio>=4.0",
     "ty>=0.0.83",
-    "wireup>=2.12",
+    "xtr-dependency-injection>=1.0,<2",
     "xtr-logging>=1.0,<2",
     "xtr-logging-contracts>=1.0,<2",
 ]
@@ -108,13 +108,9 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-# wireup registers a command class under its constructor annotations, read at
-# runtime. Deferring them would register the class with nothing to resolve.
-"src/xtr_console/integration/wireup.py" = ["TC001", "TC002", "TC003"]
 # *args: Any, **kwargs: Any is how a protocol says "any signature"; see the
 # basedpyright execution environment for the same file.
 "src/xtr_console/command/command_callable.py" = ["ANN401"]
-"tests/unit/integration/test_wireup.py" = ["TC001", "TC002", "TC003"]
 "tests/**/*.py" = [
     "S101",    # assert is the point of pytest
     "S603",    # a fresh interpreter is the only way to assert a module was never imported

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, cast, final
 
 import pytest
 from cyclopts import Parameter, validators
-from wireup import Injected
+from xtr_dependency_injection import Injected
 
 from xtr_console import (
     Application,

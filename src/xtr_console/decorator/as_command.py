@@ -16,9 +16,11 @@ runs::
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, TypeVar, overload
 
 from xtr_console.command.command_descriptor import CommandDescriptor, default_name_of
+from xtr_console.command.commands_declared_on import COMMANDS_ATTRIBUTE
 from xtr_console.command.default_registry import default_registry
 
 if TYPE_CHECKING:
@@ -96,15 +98,20 @@ def as_command(
 
     def declare(target: CommandT) -> CommandT:
         name = target_or_name if isinstance(target_or_name, str) else default_name_of(target)
-        _ = locator.register(
-            CommandDescriptor(
-                target=target,
-                name=name,
-                aliases=alias_names,
-                description=description,
-                hidden=hidden,
-            )
+        descriptor = CommandDescriptor(
+            target=target,
+            name=name,
+            aliases=alias_names,
+            description=description,
+            hidden=hidden,
         )
+        _ = locator.register(descriptor)
+        # Dual-mode: also stash the descriptor on the target so a bundle
+        # scanning a package rediscovers it per-kernel, without going through
+        # the process-wide registry above.
+        existing = getattr(target, COMMANDS_ATTRIBUTE, ())
+        with contextlib.suppress(AttributeError, TypeError):
+            setattr(target, COMMANDS_ATTRIBUTE, (*existing, descriptor))
         return target
 
     if target_or_name is None or isinstance(target_or_name, str):

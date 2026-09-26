@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, final
 
 import pytest
-from wireup import Injected
+from xtr_dependency_injection import Injected
 
 from xtr_console import (
     CommandArguments,

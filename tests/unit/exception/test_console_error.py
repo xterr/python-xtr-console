@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 from xtr_console import (
-    ApplicationAlreadyWiredError,
     CommandSignatureError,
     ConsoleError,
     DuplicateCommandError,
@@ -12,14 +11,12 @@ from xtr_console import (
     InvalidCommandResultError,
     InvalidDefaultError,
     MissingContainerError,
-    UnregisteredCommandError,
 )
 
 
 @pytest.mark.parametrize(
     "error",
     [
-        ApplicationAlreadyWiredError("acme"),
         CommandSignatureError("user:create", "reason"),
         DuplicateCommandError("uc", "user:create"),
         EventLoopRunningError(),
@@ -27,7 +24,6 @@ from xtr_console import (
         InvalidCommandResultError("user:create", "str"),
         InvalidDefaultError("Role?", "root", ("user", "admin")),
         MissingContainerError("user:create", ("session",)),
-        UnregisteredCommandError("user:create"),
     ],
 )
 def test_every_error_is_a_console_error(error: ConsoleError) -> None:

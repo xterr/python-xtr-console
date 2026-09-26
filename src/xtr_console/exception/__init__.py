@@ -6,7 +6,6 @@ cause. Each carries the data a caller needs as typed attributes rather than
 forcing a message to be parsed.
 """
 
-from .application_already_wired_error import ApplicationAlreadyWiredError
 from .command_signature_error import CommandSignatureError
 from .console_error import ConsoleError
 from .duplicate_command_error import DuplicateCommandError
@@ -15,10 +14,8 @@ from .invalid_command_name_error import InvalidCommandNameError
 from .invalid_command_result_error import InvalidCommandResultError
 from .invalid_default_error import InvalidDefaultError
 from .missing_container_error import MissingContainerError
-from .unregistered_command_error import UnregisteredCommandError
 
 __all__ = [
-    "ApplicationAlreadyWiredError",
     "CommandSignatureError",
     "ConsoleError",
     "DuplicateCommandError",
@@ -27,5 +24,4 @@ __all__ = [
     "InvalidCommandResultError",
     "InvalidDefaultError",
     "MissingContainerError",
-    "UnregisteredCommandError",
 ]

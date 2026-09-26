@@ -18,5 +18,5 @@ class MissingContainerError(ConsoleError):
         self.command_name = command_name
         self.parameters = parameters
         needed = ", ".join(parameters)
-        remedy = "run the application a container provides, via xtr_console.integration.wireup"
+        remedy = "run it through an xtr-dependency-injection Kernel"
         super().__init__(f"Command {command_name!r} needs {needed} from a container; {remedy}")
