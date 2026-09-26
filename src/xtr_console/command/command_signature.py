@@ -43,7 +43,8 @@ class CommandSignature:
     - the **console**: a parameter annotated :class:`ConsoleStyle` receives
       the style the application writes through.
     - a **container**: a parameter annotated for injection —
-      ``Injected[T]`` — is left for the container, when one is wired.
+      ``Injected[T]``, ``Autowire(...)`` or ``Target(...)`` — is left for the
+      container, when one is wired.
 
     Annotations are evaluated here, against the module declaring the
     command, so ``from __future__ import annotations`` needs no special care.
@@ -330,24 +331,19 @@ def _is_style(annotation: object) -> bool:
 def _supplied_by_container(annotation: object) -> bool:
     """Report whether a container fills a parameter annotated ``annotation``.
 
-    Detected rather than required: with no container installed there is
-    nothing to recognise, so this cannot change behaviour.
+    Asked of the container package itself — ``Injected[T]``, ``Autowire(...)`` and
+    ``Target(...)`` all count — so the console and the container never disagree.
+    Detected rather than required: with no container installed there is nothing
+    to recognise, so this cannot change behaviour.
     """
-    marker = _container_marker()
-    if marker is None:
-        return False
-    return any(
-        isinstance(item, marker)
-        for member in _members_of(annotation)
-        if get_origin(member) is Annotated
-        for item in cast("tuple[object, ...]", get_args(member)[1:])
-    )
+    check = _container_check()
+    return check is not None and check(annotation)
 
 
 @cache
-def _container_marker() -> type | None:
+def _container_check() -> Callable[[object], bool] | None:
     try:
-        from xtr_dependency_injection import Autowire  # noqa: PLC0415
+        from xtr_dependency_injection import is_container_supplied  # noqa: PLC0415
     except ImportError:
         return None
-    return Autowire
+    return is_container_supplied

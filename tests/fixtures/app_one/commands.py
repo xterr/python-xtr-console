@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import final
+from typing import Annotated, final
 
-from xtr_dependency_injection import Injected, as_service
+from xtr_dependency_injection import Injected, Target, as_service
 
 from xtr_console import ConsoleStyle, ExitCode, as_command
 
@@ -29,3 +29,22 @@ class OnlyOneCommand:
     async def __call__(self, io: ConsoleStyle) -> int:
         io.text(self._repo.value())
         return ExitCode.SUCCESS
+
+
+@final
+class Greeter:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+@as_service(qualifier="formal")
+def formal_greeter() -> Greeter:
+    return Greeter("good day from app one")
+
+
+@as_command("only:one:qualified")
+async def only_one_qualified(
+    io: ConsoleStyle, greeter: Annotated[Greeter, Target("formal")]
+) -> int:
+    io.text(greeter.text)
+    return ExitCode.SUCCESS

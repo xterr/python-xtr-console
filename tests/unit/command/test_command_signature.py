@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, cast, final
 
 import pytest
 from cyclopts import Parameter  # the parser behind the console, refused on purpose below
-from xtr_dependency_injection import Injected
+from xtr_dependency_injection import Injected, Target
 
 from xtr_console import (
     Application,
@@ -37,6 +37,7 @@ class Session:
 
 # Module globals, so evaluating the deferred annotations below finds them.
 InjectedSession = Injected[Session]
+QualifiedSession = Annotated[Session, Target("replica")]
 
 
 def signature_of(target: object) -> CommandSignature:
@@ -665,3 +666,14 @@ async def test_a_validator_is_not_called_for_an_optional_left_out(
 async def test_a_validator_is_called_for_an_optional_given(parser: ApplicationTester) -> None:
     assert await parse(parser, "optional", "--limit", "0") == ExitCode.INVALID
     assert "Must be > 0" in parser.error_display
+
+
+def test_a_qualified_parameter_is_left_for_the_container() -> None:
+    async def command(io: ConsoleStyle, name: str, replica: QualifiedSession) -> int:
+        del io, name, replica
+        return 0
+
+    signature = signature_of(command)
+
+    assert signature.injected == ("replica",)
+    assert list(signature.command_line.parameters) == ["name"]

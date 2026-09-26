@@ -37,6 +37,21 @@ async def test_function_command_runs_with_injected_service() -> None:
     assert "from app one" in tester.display
 
 
+async def test_function_command_receives_a_qualified_service() -> None:
+    kernel = Kernel(app_one.__name__, env="test")
+    booted = await kernel.boot()
+    try:
+        container: ContainerInterface = booted.container
+        app = await container.get(Application)
+        tester = ApplicationTester(app)
+        code = await tester.execute(["only:one:qualified"])
+    finally:
+        await booted.shutdown()
+
+    assert code == ExitCode.SUCCESS
+    assert "good day from app one" in tester.display
+
+
 async def test_class_command_is_container_built() -> None:
     kernel = Kernel(app_one.__name__, env="test")
     booted = await kernel.boot()

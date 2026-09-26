@@ -238,7 +238,7 @@ A command's signature *is* its command line. Each parameter is filled by one of 
 | Parameter | Filled by |
 | --- | --- |
 | annotated `ConsoleStyle` | the application — see [Writing output](#writing-output) |
-| annotated `Injected[...]` | the container — see [Wiring with a container](#wiring-with-a-container) |
+| annotated `Injected[...]`, `Target(...)` or `Autowire(...)` | the container — see [Wiring with a container](#wiring-with-a-container) |
 | anything else | the command line |
 
 Of the command line's share, **a parameter before a bare `*` is an argument, taken by position;
