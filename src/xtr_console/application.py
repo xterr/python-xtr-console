@@ -21,6 +21,7 @@ from .command.command_descriptor import function_of
 from .exception import EventLoopRunningError, InvalidCommandResultError
 from .exit_code import ExitCode
 from .global_options import GlobalOptions, list_global_options
+from .list_command import with_builtin_list
 from .style import ConsoleStyle
 from .style.console_style import block
 from .style.exception_renderer import render_exception
@@ -198,10 +199,17 @@ class Application:
         return code
 
     def _configure(self, argv: Sequence[str] | None, style: ConsoleStyle) -> CommandSelection:
-        """Apply the global options in ``argv`` to ``style``; select from what is left."""
+        """Apply the global options in ``argv`` to ``style``; select from what is left.
+
+        The built-in ``list`` command is added unless the user declared one
+        under that name (or an alias): a user's ``list`` wins.
+        """
         options = GlobalOptions.parse(list(argv) if argv is not None else sys.argv[1:])
         options.apply(style)
-        return CommandSelection.of(self._commands.commands(), options.remaining)
+        commands = with_builtin_list(
+            self._commands.commands(), self._name, self._version, self._description
+        )
+        return CommandSelection.of(commands, options.remaining)
 
     def _build(self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]) -> App:
         """Build the parser for ``commands``."""

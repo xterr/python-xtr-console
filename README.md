@@ -45,6 +45,7 @@ output is [rich](https://github.com/Textualize/rich).
 - [Asking questions](#asking-questions)
 - [Verbosity and global options](#verbosity-and-global-options)
 - [The application](#the-application)
+- [Listing commands](#listing-commands)
 - [Kernel / bundle](#kernel--bundle)
 - [Testing your commands](#testing-your-commands)
 - [Errors](#errors)
@@ -509,6 +510,44 @@ code = await application.run_async(["user:create", "ada@example.com"])  # on the
   whose annotations cannot be evaluated fails the list — with a `CommandSignatureError` naming
   it — but not the other commands.
 - `help_formatter=` takes any cyclopts help formatter, for a different help layout.
+
+## Listing commands
+
+Every application answers to a built-in `list` command. It prints
+the application's name and version, then every registered command with its description,
+grouped by namespace prefix (the part before `:`) and sorted:
+
+```text
+$ acme list
+acme 1.2.0
+
+Available commands:
+  stat                Print statistics.
+  list                List commands
+ cache
+  cache:warm          Warm the cache.
+ user
+  user:create (uc)    Create a user.
+  user:import         Import users from a CSV file.
+
+$ acme list user                   # only that namespace
+acme 1.2.0
+
+Available commands for the "user" namespace:
+  user:create (uc)    Create a user.
+  user:import         Import users from a CSV file.
+
+$ acme list nope                   # unknown namespace, exit code 2
+
+  [ERROR] There are no commands defined in the "nope" namespace.
+```
+
+- The listing reflects what the application currently sees: a command left out of the
+  environment by [`@when("dev")`](../xtr-dependency-injection#configuration) is not there in
+  `prod`, and a bundle contributing commands late is there once it has run.
+- Hidden commands (`@as_command(..., hidden=True)`) are not listed.
+- **A user command named `list`, or answering to `list` as an alias, overrides the built-in.**
+  Declare one to replace it entirely — its output, its exit codes, its arguments.
 
 ## Kernel / bundle
 
