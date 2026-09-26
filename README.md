@@ -421,6 +421,19 @@ io.success(f"Saved {escape(path)}")
 `io.error_console` writes to standard error. Output piped to a file or another program carries
 no colour codes.
 
+The application builds the style a command receives. To build one yourself — to capture what
+a command writes, or to run a command inside another program — give it streams:
+
+```python
+output = io.StringIO()
+style = ConsoleStyle(output, sys.stderr, width=100, decorated=False, interactive=False)
+code = await application.run_async(["report"], style=style)
+```
+
+`output` and `errors` default to standard output and standard error; `width` to the
+terminal's; `decorated` forces colours on or off, detected from the output when omitted.
+In tests, prefer the [testers](#testing-your-commands), which do this for you.
+
 ## Asking questions
 
 ```python
@@ -532,7 +545,6 @@ code = await application.run_async(["user:create", "ada@example.com"])  # on the
   starts a command as fast as one with a handful; the full list is built for `--help`. A command
   whose annotations cannot be evaluated fails the list — with a `CommandSignatureError` naming
   it — but not the other commands.
-- `help_formatter=` takes any cyclopts help formatter, for a different help layout.
 
 ## Listing commands
 

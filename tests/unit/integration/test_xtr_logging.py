@@ -5,7 +5,6 @@ import sys
 from io import StringIO
 
 import pytest
-from rich.console import Console
 from xtr_logging import LoggerFactory, LoggingConfig
 from xtr_logging.config import ConsoleHandlerSpec
 from xtr_logging.processor.processor_registry import ProcessorRegistry
@@ -16,11 +15,7 @@ from xtr_console.integration.xtr_logging import follow
 
 def logged_at(verbosity: Verbosity, *, decorated: bool = False) -> str:
     errors = StringIO()
-    style = ConsoleStyle(
-        Console(file=StringIO(), color_system=None),
-        Console(file=errors, width=200, color_system=None),
-        verbosity=verbosity,
-    )
+    style = ConsoleStyle(StringIO(), errors, width=200, decorated=False, verbosity=verbosity)
     style.decorated = decorated
     factory = LoggerFactory(
         LoggingConfig(handlers={"console": ConsoleHandlerSpec()}), registry=ProcessorRegistry()

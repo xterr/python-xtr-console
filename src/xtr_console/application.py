@@ -30,7 +30,6 @@ from .verbosity import SHELL_VERBOSITY, Verbosity
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
-    from cyclopts.help.protocols import HelpFormatter
     from rich.padding import Padding
 
     from .command import (
@@ -81,7 +80,6 @@ class Application:
         "_commands",
         "_configure_hooks",
         "_description",
-        "_help_formatter",
         "_invoker",
         "_name",
         "_shutdown",
@@ -96,7 +94,6 @@ class Application:
         *,
         description: str | None = None,
         commands: CommandsLocatorInterface | None = None,
-        help_formatter: HelpFormatter | None = None,
         catch_exceptions: bool = True,
         backend: Literal["asyncio", "trio"] = "asyncio",
     ) -> None:
@@ -105,7 +102,6 @@ class Application:
         self._version = version
         self._description = description
         self._commands = commands if commands is not None else default_registry()
-        self._help_formatter = help_formatter if help_formatter is not None else _help_formatter()
         self._catch_exceptions = catch_exceptions
         self._backend: Literal["asyncio", "trio"] = backend
         self._invoker: CommandInvokerInterface = DefaultCommandInvoker()
@@ -219,7 +215,7 @@ class Application:
             help=self._description,
             help_format="rich",
             help_prologue=header,
-            help_formatter=self._help_formatter,
+            help_formatter=_help_formatter(),
             help_flags=("--help", "-h"),
             version=header if self._version is not None else None,
             version_format="rich",

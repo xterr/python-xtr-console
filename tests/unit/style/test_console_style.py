@@ -4,7 +4,6 @@ from io import StringIO
 from typing import TYPE_CHECKING, final
 
 import pytest
-from rich.console import Console
 
 from xtr_console import (
     Application,
@@ -35,8 +34,10 @@ class Terminal:
         self.output = StringIO()
         self.errors = StringIO()
         self.style = ConsoleStyle(
-            Console(file=self.output, width=60, color_system=None, highlight=False),
-            Console(file=self.errors, width=60, color_system=None, highlight=False),
+            self.output,
+            self.errors,
+            width=60,
+            decorated=False,
             input_stream=StringIO("".join(f"{answer}\n" for answer in answers)),
             interactive=interactive,
             verbosity=verbosity,
@@ -309,6 +310,29 @@ def test_a_style_that_is_not_interactive_answers_with_defaults() -> None:
     assert answers == ("ada", "", False)
 
 
+def test_it_writes_to_the_streams_it_is_given_at_the_width_it_is_given() -> None:
+    output, errors = StringIO(), StringIO()
+    style = ConsoleStyle(output, errors, width=40, decorated=False)
+
+    style.text("to the output")
+    style.error_console.print("to the errors")
+
+    assert ("to the output" in output.getvalue(), "to the errors" in errors.getvalue()) == (
+        True,
+        True,
+    )
+    assert (style.console.width, style.error_console.width, style.decorated) == (40, 40, False)
+
+
+def test_a_style_decorated_from_the_start_writes_ansi_codes() -> None:
+    output = StringIO()
+    style = ConsoleStyle(output, StringIO(), width=40, decorated=True)
+
+    style.text("[bold]loud[/bold]")
+
+    assert ("\x1b[" in output.getvalue(), style.decorated) == (True, True)
+
+
 def test_it_writes_to_the_terminal_when_given_no_console() -> None:
     style = ConsoleStyle()
 
@@ -454,7 +478,7 @@ def closed_stdin(monkeypatch: pytest.MonkeyPatch) -> ConsoleStyle:
 
     monkeypatch.setattr("builtins.input", ended)
     monkeypatch.setattr("getpass.getpass", ended)
-    return ConsoleStyle(Console(file=StringIO(), color_system=None))
+    return ConsoleStyle(StringIO(), decorated=False)
 
 
 def test_ask_answers_with_its_default_when_input_has_ended(closed_stdin: ConsoleStyle) -> None:

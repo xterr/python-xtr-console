@@ -5,8 +5,6 @@ from __future__ import annotations
 from io import StringIO
 from typing import TYPE_CHECKING, final
 
-from rich.console import Console
-
 from xtr_console.style import ConsoleStyle
 from xtr_console.verbosity import Verbosity
 
@@ -58,8 +56,10 @@ class ApplicationTester:
         """
         output, errors = StringIO(), StringIO()
         style = ConsoleStyle(
-            self._console(output),
-            self._console(errors),
+            output,
+            errors,
+            width=self._width,
+            decorated=False,
             input_stream=StringIO("".join(f"{line}\n" for line in inputs)),
             interactive=interactive,
             verbosity=verbosity,
@@ -85,13 +85,3 @@ class ApplicationTester:
     def status_code(self) -> int | None:
         """Return the last run's exit code, or ``None`` before the first."""
         return self._status_code
-
-    def _console(self, file: StringIO) -> Console:
-        return Console(
-            file=file,
-            width=self._width,
-            force_terminal=False,
-            color_system=None,
-            highlight=False,
-            legacy_windows=False,
-        )

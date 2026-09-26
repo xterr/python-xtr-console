@@ -36,33 +36,44 @@ class ConsoleStyle:
     """Titles, messages, tables, progress and questions, styled alike.
 
     A command asks for one by annotating a parameter with this class; the
-    application supplies it. Messages are rich markup, so ``"[bold]x[/]"``
-    renders bold — escape user data with :func:`rich.markup.escape`.
+    application supplies it. Messages are markup, so ``"[bold]x[/]"`` renders
+    bold — escape anything from outside the program with
+    :func:`~xtr_console.escape`. For anything the methods below do not draw,
+    :attr:`console` and :attr:`error_console` are rich's own consoles.
+
+    Output goes to ``output`` and ``errors`` — standard output and standard
+    error when omitted, which are then looked up as they are written to, so a
+    redirection is followed. ``width`` fixes the width output is laid out at
+    (the terminal's when omitted); ``decorated`` forces ANSI colours and
+    styles on or off (detected from the output when omitted).
 
     Questions read from ``input_stream`` (the terminal when omitted). When
     ``interactive`` is off, every question returns its default unasked, the
     way a script or a CI job needs.
 
     ``verbosity`` decides what is written: below :attr:`Verbosity.NORMAL`
-    (``-q``) the output console writes nothing, and at
-    :attr:`Verbosity.SILENT` neither does the error console. The style owns
-    its consoles' ``quiet`` flag.
+    (``-q``) the output writes nothing, and at :attr:`Verbosity.SILENT`
+    neither does the error output. The style owns its consoles' ``quiet`` flag.
     """
 
     __slots__ = ("_console", "_error_console", "_input_stream", "_interactive", "_verbosity")
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 — every setting optional, all by keyword but the streams.
         self,
-        console: Console | None = None,
-        error_console: Console | None = None,
+        output: TextIO | None = None,
+        errors: TextIO | None = None,
         *,
+        width: int | None = None,
+        decorated: bool | None = None,
         input_stream: TextIO | None = None,
         interactive: bool = True,
         verbosity: Verbosity = Verbosity.NORMAL,
     ) -> None:
-        """Write to ``console``, and errors about the run to ``error_console``."""
-        self._console = console if console is not None else Console()
-        self._error_console = error_console if error_console is not None else Console(stderr=True)
+        """Write to ``output``, and errors about the run to ``errors``."""
+        self._console = _rendering_console(output, stderr=False, width=width, decorated=decorated)
+        self._error_console = _rendering_console(
+            errors, stderr=True, width=width, decorated=decorated
+        )
         self._input_stream = input_stream
         self._interactive = interactive
         self._verbosity = verbosity
@@ -294,6 +305,26 @@ class ConsoleStyle:
         """Silence output below normal verbosity, and errors too when silent."""
         self._console.quiet = self._verbosity < Verbosity.NORMAL
         self._error_console.quiet = self._verbosity < Verbosity.QUIET
+
+
+def _rendering_console(
+    stream: TextIO | None, *, stderr: bool, width: int | None, decorated: bool | None
+) -> Console:
+    """Build what renders to ``stream`` — standard output or error when ``None``.
+
+    Left to itself (``decorated=None``) the console detects whether it writes
+    to a terminal; forced on or off, it writes ANSI codes or never does.
+    """
+    if decorated is None:
+        return Console(file=stream, stderr=stderr, width=width)
+    return Console(
+        file=stream,
+        stderr=stderr,
+        width=width,
+        force_terminal=decorated,
+        color_system="auto" if decorated else None,
+        legacy_windows=False if stream is not None else None,
+    )
 
 
 def block(label: str, message: Text, style: str) -> Padding:
