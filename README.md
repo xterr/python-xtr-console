@@ -278,7 +278,7 @@ $ acme copy --source a.txt        # refused: an argument is not an option
 | `color: Color = Color.RED` (an `Enum`) | `--color green`, by value | `Color.GREEN` |
 
 Values are converted from the annotation: `str`, `int`, `float`, `bool`, `Path`, `datetime`,
-`Enum`, `Literal`, `list[...]`, `X | None` and more — whatever cyclopts converts. A value that does
+`Enum`, `Literal`, `list[...]`, `Decimal`, `X | None` and more. A value that does
 not convert, or is not one of the choices, ends the run with `INVALID` and says why:
 
 ```text
@@ -287,32 +287,37 @@ $ acme export --level trace
   [ERROR] Invalid value "trace" for --level. Choose from: "debug", "info".
 ```
 
-### Fine-tuning with `Parameter`
+### Fine-tuning with `Argument` and `Option`
 
-Anything more goes in cyclopts' `Parameter`, attached with `Annotated`:
+Anything more goes in an `Argument(...)` or `Option(...)` marker, attached with `Annotated`. The
+marker fine-tunes a parameter; its place in the signature still decides what it is — an
+`Option` on a parameter before the bare `*`, or an `Argument` after it, is refused with
+`CommandSignatureError` as the command is built.
 
 ```python
+from pathlib import Path
 from typing import Annotated
 
-from cyclopts import Parameter, validators
+from xtr_console import Argument, Option, Range
 
 
 @as_command("export")
 async def export(
+    target: Annotated[Path, Argument(name="FILE", help="Where to write.")],
     *,
-    force: Annotated[bool, Parameter(alias="-f")] = False,  # -f
-    depth: Annotated[int, Parameter(alias="-d", count=True)] = 0,  # -ddd → 3
-    cache: Annotated[bool, Parameter(negative="--no-cache")] = True,  # --no-cache
-    since: Annotated[str, Parameter(name="--from")] = "now",  # --from, not --since
-    token: Annotated[str, Parameter(env_var="ACME_TOKEN")] = "",  # falls back to $ACME_TOKEN
-    retries: Annotated[int, Parameter(validator=validators.Number(gte=1, lte=5))] = 3,
-    note: Annotated[str, Parameter(help="Shown in --help.")] = "",
+    force: Annotated[bool, Option(alias="-f")] = False,  # -f
+    depth: Annotated[int, Option(alias="-d", count=True)] = 0,  # -ddd → 3
+    cache: Annotated[bool, Option(negative="--no-cache")] = True,  # --no-cache
+    since: Annotated[str, Option(name="--from")] = "now",  # --from, not --since
+    token: Annotated[str, Option(env_var="ACME_TOKEN")] = "",  # falls back to $ACME_TOKEN
+    retries: Annotated[int, Option(validator=Range(gte=1, lte=5))] = 3,
+    note: Annotated[str, Option(help="Shown in --help.")] = "",
 ) -> int: ...
 ```
 
-| `Parameter(...)` | Effect |
+| `Option(...)` | Effect |
 | --- | --- |
-| `alias="-f"` | a short name alongside the long one |
+| `alias="-f"` or `alias=("-f", "-F")` | other names alongside the long one |
 | `count=True` | on an `int`: each repetition adds one — `-ddd` is `3` |
 | `negative="--no-cache"` | a flag that can also be switched off; flags have none by default |
 | `name="--from"` | the option's name on the command line, when the parameter's cannot be it |
@@ -320,15 +325,33 @@ async def export(
 | `validator=...` | refuse a value that converts but is out of bounds |
 | `help="..."` | the description, instead of the docstring's |
 
-The full list is in the [cyclopts documentation](https://cyclopts.readthedocs.io/en/latest/api.html#cyclopts.Parameter).
+`Argument(...)` takes `name` (shown in the usage line and the help), `help`, `env_var` and
+`validator`.
+
+A validator is any callable taking the converted value and raising `ValueError` to refuse it;
+the run then ends `INVALID` with the error's message. It is never called with `None`, the
+value of an `X | None` parameter left out. `Range(gt=, gte=, lt=, lte=)` is the one shipped
+for numbers:
+
+```python
+def even(value: int) -> None:
+    if value % 2:
+        raise ValueError("Must be even.")
+
+
+async def pairs(*, size: Annotated[int, Option(validator=even)] = 2) -> int: ...
+```
+
+The parser behind the console is an implementation detail: a parameter carrying its own
+settings instead of these markers is refused with `CommandSignatureError`.
 
 A parameter named `help` would become `--help` and take the flag over, so it is refused as the
-command is built; rename it on the command line with `Parameter(name="--topic")`. So is an option
+command is built; rename it on the command line with `Option(name="--topic")`. So is an option
 answering to a [global option](#verbosity-and-global-options) — `quiet`, `verbose`, `silent`,
-`alias="-v"`, `alias="-n"`, `negative="--no-ansi"` and the like. More parameter kinds work as
-they do in cyclopts: `**kwargs` collects unknown `--name value` pairs, a dataclass parameter
-`point: Point` is filled from `--point.x 3 --point.y 4`, and a parameter without an annotation
-takes the type of its default, or is a string when it has none.
+`alias="-v"`, `alias="-n"`, `negative="--no-ansi"` and the like. More parameter kinds work too:
+`**kwargs` collects unknown `--name value` pairs, a dataclass parameter `point: Point` is filled
+from `--point.x 3 --point.y 4`, and a parameter without an annotation takes the type of its
+default, or is a string when it has none.
 
 ### Help text
 
@@ -344,7 +367,7 @@ and option with its type, choices, default and environment variable:
       --cache --no-cache    [default: True]
 ```
 
-Help text is rich markup, like everything the console prints.
+Help text is markup, like everything the console prints.
 
 ## Writing output
 
@@ -383,13 +406,13 @@ async def report(io: ConsoleStyle) -> int:
 The parameter may be optional — `io: ConsoleStyle | None = None` — and a command may take it
 more than once; every one receives the same style.
 
-Messages, list items, table cells and questions are rich markup — `"[bold]done[/bold]"` prints
+Messages, list items, table cells and questions are markup — `"[bold]done[/bold]"` prints
 **done**. Text that is not valid markup, such as a stray `[/]`, is printed as it is rather than
 failing the command. But a bracketed word that *reads* as a tag is taken as one: `list[int]`
-prints as `list`. Escape anything that comes from outside the program:
+prints as `list`. Escape anything that comes from outside the program with `escape`:
 
 ```python
-from rich.markup import escape
+from xtr_console import escape
 
 io.success(f"Saved {escape(path)}")
 ```
@@ -715,7 +738,7 @@ Every error derives from `ConsoleError` and carries its data as typed attributes
 
 | Error | Raised when |
 | --- | --- |
-| `CommandSignatureError` | A command class has no `__call__`, a command is a generator, is not annotated to return an `int`, has a parameter that would take `--help` or a global option over, an annotation that cannot be evaluated, or a container parameter that cannot be passed by keyword |
+| `CommandSignatureError` | A command class has no `__call__`, a command is a generator, is not annotated to return an `int`, has a parameter that would take `--help` or a global option over, an annotation that cannot be evaluated, a container parameter that cannot be passed by keyword, an `Argument` / `Option` marker that contradicts the parameter's place, or the parser's own settings instead of a marker |
 | `InvalidCommandNameError` | A name or alias is empty, holds whitespace, or starts with `-` |
 | `DuplicateCommandError` | A name or alias is claimed twice, by two commands or by one |
 | `InvalidCommandResultError` | A command returned something other than an `int` |
@@ -735,8 +758,10 @@ xtr_console/
 ├── verbosity.py          SILENT, QUIET, NORMAL, VERBOSE, VERY_VERBOSE, DEBUG
 ├── global_options.py     -v/-vv/-vvv, -q, --silent, -n, --ansi/--no-ansi, read off every command line
 ├── decorator/            @as_command
+├── attribute/            Argument, Option — what a parameter says about itself on the command line
+├── validator/            Range, and the Validator shape any callable fits
 ├── command/              what was declared, who fills which parameter, and how it is called
-├── style/                ConsoleStyle, and how an escaping exception is reported
+├── style/                ConsoleStyle, escape(), and how an escaping exception is reported
 ├── tester/               ApplicationTester, CommandTester
 ├── exception/            one error per module, all a ConsoleError
 ├── bundle/               ConsoleBundle for xtr-dependency-injection

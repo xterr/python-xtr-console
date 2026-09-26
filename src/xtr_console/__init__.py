@@ -12,6 +12,7 @@ The core has no dependency-injection container of its own, and imports none.
 from importlib.metadata import version
 
 from .application import Application, Hook
+from .attribute import Argument, Option
 from .command import (
     CommandArguments,
     CommandCallable,
@@ -35,8 +36,9 @@ from .exception import (
     MissingContainerError,
 )
 from .exit_code import ExitCode
-from .style import ConsoleStyle
+from .style import ConsoleStyle, escape
 from .tester import ApplicationTester, CommandTester
+from .validator import Range, Validator
 from .verbosity import SHELL_VERBOSITY, Verbosity
 
 __version__ = version("xtr-console")
@@ -45,6 +47,7 @@ __all__ = [
     "SHELL_VERBOSITY",
     "Application",
     "ApplicationTester",
+    "Argument",
     "CommandArguments",
     "CommandCallable",
     "CommandDescriptor",
@@ -65,8 +68,12 @@ __all__ = [
     "InvalidCommandResultError",
     "InvalidDefaultError",
     "MissingContainerError",
+    "Option",
+    "Range",
+    "Validator",
     "Verbosity",
     "__version__",
     "as_command",
     "default_registry",
+    "escape",
 ]

@@ -8,18 +8,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, cast, final
 
 import pytest
-from cyclopts import Parameter, validators
+from cyclopts import Parameter  # the parser behind the console, refused on purpose below
 from xtr_dependency_injection import Injected
 
 from xtr_console import (
     Application,
     ApplicationTester,
+    Argument,
     CommandDescriptor,
     CommandSignature,
     CommandSignatureError,
     CommandsLocator,
     ConsoleStyle,
     ExitCode,
+    Option,
+    Range,
     as_command,
 )
 
@@ -253,16 +256,16 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
     name: str,
     ratio: float = 0.5,
     when: datetime | None = None,
-    depth: Annotated[int, Parameter(alias="-d", count=True)] = 0,
-    force: Annotated[bool, Parameter(alias="-f")] = False,
-    cache: Annotated[bool, Parameter(negative="--no-cache")] = True,
+    depth: Annotated[int, Option(alias="-d", count=True)] = 0,
+    force: Annotated[bool, Option(alias="-f")] = False,
+    cache: Annotated[bool, Option(negative="--no-cache")] = True,
     tags: list[str] | None = None,
     level: Literal["debug", "info"] = "info",
     color: Color = Color.RED,
-    since: Annotated[str, Parameter(name="--from")] = "now",
-    region: Annotated[str, Parameter(env_var="ACME_REGION")] = "",
-    retries: Annotated[int, Parameter(validator=validators.Number(gte=1, lte=5))] = 3,
-    note: Annotated[str, Parameter(help="A note, from Parameter.")] = "",
+    since: Annotated[str, Option(name="--from")] = "now",
+    region: Annotated[str, Option(env_var="ACME_REGION")] = "",
+    retries: Annotated[int, Option(validator=Range(gte=1, lte=5))] = 3,
+    note: Annotated[str, Option(help="A note, from Option.")] = "",
 ) -> int:
     received.update(
         name=name,
@@ -285,7 +288,7 @@ def options_command(  # noqa: PLR0913 — one of every kind of option, on purpos
 @as_command("class", registry=PARSED)
 @final
 class ClassOptionsCommand:
-    def __call__(self, path: Path, *, size: Annotated[int, Parameter(alias="-s")] = 2) -> int:
+    def __call__(self, path: Path, *, size: Annotated[int, Option(alias="-s")] = 2) -> int:
         received.update(path=path, size=size)
         return 0
 
@@ -466,7 +469,7 @@ async def test_help_lists_the_arguments_apart_from_the_options(parser: Applicati
         "[env var: ACME_REGION]",
         "[default: 0.5]",
         "--cache --no-cache",
-        "A note, from Parameter.",
+        "A note, from Option.",
     ],
 )
 async def test_help_describes_every_option(parser: ApplicationTester, shown: str) -> None:
@@ -516,7 +519,7 @@ def test_a_parameter_named_help_is_refused() -> None:
 
 
 def test_a_parameter_named_help_but_renamed_is_accepted() -> None:
-    def command(*, help: Annotated[str, Parameter(name="--topic")] = "") -> int:  # noqa: A002
+    def command(*, help: Annotated[str, Option(name="--topic")] = "") -> int:  # noqa: A002
         del help
         return 0
 
@@ -531,17 +534,17 @@ def quiet_by_name(*, quiet: bool = False) -> int:
     return 0
 
 
-def verbose_by_alias(*, depth: Annotated[int, Parameter(alias="-v", count=True)] = 0) -> int:
+def verbose_by_alias(*, depth: Annotated[int, Option(alias="-v", count=True)] = 0) -> int:
     del depth
     return 0
 
 
-def silent_by_rename(*, mute: Annotated[bool, Parameter(name="silent")] = False) -> int:
+def silent_by_rename(*, mute: Annotated[bool, Option(name="silent")] = False) -> int:
     del mute
     return 0
 
 
-def ansi_by_negative(*, color: Annotated[bool, Parameter(negative="--no-ansi")] = True) -> int:
+def ansi_by_negative(*, color: Annotated[bool, Option(negative="--no-ansi")] = True) -> int:
     del color
     return 0
 
@@ -568,3 +571,97 @@ def test_an_argument_may_share_a_global_options_name() -> None:
         return 0
 
     assert list(signature_of(command).command_line.parameters) == ["quiet"]
+
+
+# ─── Argument and Option markers ─────────────────────────────────
+
+
+@as_command("marked", registry=PARSED)
+def marked_arguments_command(
+    source: Annotated[str, Argument(name="SRC", help="Where from.", env_var="ACME_SOURCE")],
+    copies: Annotated[int, Argument(validator=Range(gt=0, lt=10))] = 1,
+) -> int:
+    received.update(source=source, copies=copies)
+    return 0
+
+
+@pytest.mark.anyio
+async def test_an_argument_marker_validates_the_value(parser: ApplicationTester) -> None:
+    assert await parse(parser, "marked", "a", "10") == ExitCode.INVALID
+    assert "Must be < 10" in parser.error_display
+
+
+@pytest.mark.anyio
+async def test_an_argument_marker_reads_its_environment_variable(
+    parser: ApplicationTester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ACME_SOURCE", "from-env")
+
+    _ = await parse(parser, "marked")
+
+    assert received == {"source": "from-env", "copies": 1}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("shown", ["SRC", "Where from.", "[env var: ACME_SOURCE]"])
+async def test_an_argument_marker_shows_in_help(parser: ApplicationTester, shown: str) -> None:
+    _ = await parse(parser, "marked", "--help")
+
+    assert shown in parser.display
+
+
+def test_an_option_marker_on_an_argument_is_refused() -> None:
+    def command(path: Annotated[str, Option(alias="-p")]) -> int:
+        del path
+        return 0
+
+    with pytest.raises(CommandSignatureError, match=r"is an argument.*marked Option"):
+        _ = signature_of(command)
+
+
+def test_an_argument_marker_on_an_option_is_refused() -> None:
+    def command(*, path: Annotated[str, Argument(help="x")] = "") -> int:
+        del path
+        return 0
+
+    with pytest.raises(CommandSignatureError, match=r"is an option.*marked Argument"):
+        _ = signature_of(command)
+
+
+def test_the_parsers_own_settings_are_refused() -> None:
+    def command(*, force: Annotated[bool, Parameter(alias="-f")] = False) -> int:
+        del force
+        return 0
+
+    with pytest.raises(CommandSignatureError, match="use Argument"):
+        _ = signature_of(command)
+
+
+def test_the_callable_signature_keeps_the_markers() -> None:
+    signature = signature_of(marked_arguments_command)
+
+    annotation = cast("object", signature.callable_signature.parameters["source"].annotation)
+
+    assert "Argument" in str(annotation)
+
+
+@as_command("optional", registry=PARSED)
+def optional_bounded_command(
+    *, limit: Annotated[float | None, Option(validator=Range(gt=0))] = None
+) -> int:
+    received.update(limit=limit)
+    return 0
+
+
+@pytest.mark.anyio
+async def test_a_validator_is_not_called_for_an_optional_left_out(
+    parser: ApplicationTester,
+) -> None:
+    assert await parse(parser, "optional") == ExitCode.SUCCESS
+    assert received == {"limit": None}
+
+
+@pytest.mark.anyio
+async def test_a_validator_is_called_for_an_optional_given(parser: ApplicationTester) -> None:
+    assert await parse(parser, "optional", "--limit", "0") == ExitCode.INVALID
+    assert "Must be > 0" in parser.error_display

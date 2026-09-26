@@ -7,10 +7,11 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from functools import cache
 from types import UnionType
-from typing import TYPE_CHECKING, Annotated, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 from cyclopts import Parameter
 
+from xtr_console.attribute import Argument, Option
 from xtr_console.exception import CommandSignatureError
 from xtr_console.global_options import GLOBAL_FLAGS
 from xtr_console.style import ConsoleStyle
@@ -20,6 +21,8 @@ from .command_descriptor import call_of, function_of
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from xtr_console.validator import Validator
 
     from .command_descriptor import CommandDescriptor
 
@@ -62,8 +65,10 @@ class CommandSignature:
         Raises:
             CommandSignatureError: If an annotation cannot be evaluated, the
                 command is not annotated to return an ``int``, a parameter
-                would take ``--help`` over, or a parameter a container fills
-                cannot be passed by keyword.
+                would take ``--help`` over, a parameter a container fills
+                cannot be passed by keyword, an ``Argument`` / ``Option``
+                marker does not match the parameter's place, or a parameter
+                carries the parser's own settings.
         """
         parameters, returned = _signature_of(command)
         if not _is_exit_code(returned):
@@ -81,22 +86,25 @@ class CommandSignature:
                 )
             if parameter.name in {*styled, *injected}:
                 continue
+            _check_markers(command.name, parameter)
             if _takes_help_over(parameter):
-                reason = (
-                    "parameter 'help' would take --help over; rename it with Parameter(name=...)"
-                )
+                reason = "parameter 'help' would take --help over; rename it with Option(name=...)"
                 raise CommandSignatureError(command.name, reason)
             claimed = sorted(GLOBAL_FLAGS.intersection(_option_names(parameter)))
             if claimed:
                 reason = (
                     f"parameter {parameter.name!r} would take the global option {claimed[0]} "
-                    "over; rename it with Parameter(name=..., alias=...)"
+                    "over; rename it with Option(name=..., alias=...)"
                 )
                 raise CommandSignatureError(command.name, reason)
         return cls(
             callable_signature=inspect.Signature(parameters),
             command_line=inspect.Signature(
-                [_by_position(p) for p in parameters if p.name not in {*styled, *injected}]
+                [
+                    _for_parser(_by_position(p))
+                    for p in parameters
+                    if p.name not in {*styled, *injected}
+                ]
             ),
             # With the container's parameters gone from the middle, whatever
             # could go by keyword must: the container adds its own by keyword,
@@ -152,34 +160,121 @@ def _takes_help_over(parameter: inspect.Parameter) -> bool:
     """Report whether ``parameter`` would become ``--help``, unless renamed."""
     if parameter.name != "help":
         return False
-    return not any(settings.name for settings in _settings_of(parameter))
+    return not any(marker.name for marker in _markers_of(parameter))
 
 
 def _option_names(parameter: inspect.Parameter) -> set[str]:
     """Return every flag an option parameter answers to; none for an argument.
 
-    Its name — ``--dry-run`` for ``dry_run`` unless ``Parameter(name=...)``
-    says otherwise — its aliases and any negative form.
+    Its name — ``--dry-run`` for ``dry_run`` unless ``Option(name=...)`` says
+    otherwise — its aliases and its negative form.
     """
     if parameter.kind is not _Parameter.KEYWORD_ONLY:
         return set()
-    # cyclopts turns each of these into a tuple of strings, or None.
-    settings = _settings_of(parameter)
-    names = [name for entry in settings for name in entry.name or ()]
+    options = [marker for marker in _markers_of(parameter) if isinstance(marker, Option)]
+    names = [option.name for option in options if option.name]
     if not names:
         names = [parameter.name.lower().replace("_", "-")]
-    names.extend(alias for entry in settings for alias in entry.alias or ())
-    names.extend(negative for entry in settings for negative in entry.negative or ())
+    names.extend(alias for option in options for alias in option.aliases)
+    names.extend(option.negative for option in options if option.negative)
     return {name if name.startswith("-") else f"--{name}" for name in names}
 
 
-def _settings_of(parameter: inspect.Parameter) -> tuple[Parameter, ...]:
-    """Return the cyclopts ``Parameter`` settings ``Annotated`` attaches to ``parameter``."""
+def _metadata_of(parameter: inspect.Parameter) -> tuple[object, ...]:
+    """Return what ``Annotated`` attaches to ``parameter``; nothing when it is not annotated."""
     annotation = _annotation_of(parameter)
-    metadata: tuple[object, ...] = (
-        get_args(annotation)[1:] if get_origin(annotation) is Annotated else ()
-    )
-    return tuple(item for item in metadata if isinstance(item, Parameter))
+    if get_origin(annotation) is not Annotated:
+        return ()
+    return cast("tuple[object, ...]", get_args(annotation)[1:])
+
+
+def _markers_of(parameter: inspect.Parameter) -> tuple[Argument | Option, ...]:
+    """Return the ``Argument`` and ``Option`` markers ``Annotated`` attaches to ``parameter``."""
+    return tuple(item for item in _metadata_of(parameter) if isinstance(item, (Argument, Option)))
+
+
+def _check_markers(command: str, parameter: inspect.Parameter) -> None:
+    """Refuse a marker that contradicts the parameter's place, or the parser's own settings.
+
+    Before a bare ``*`` is an argument, after it an option: a marker fine-tunes that, it
+    never changes it. The parser behind the console is an implementation detail, so its
+    settings class is refused rather than silently honoured.
+
+    Raises:
+        CommandSignatureError: If a marker does not match the parameter's place, or the
+            parameter carries the parser's settings.
+    """
+    if any(isinstance(item, Parameter) for item in _metadata_of(parameter)):
+        reason = (
+            f"parameter {parameter.name!r} carries the parser's own settings; "
+            "use Argument(...) or Option(...) from xtr_console"
+        )
+        raise CommandSignatureError(command, reason)
+    is_option = parameter.kind is _Parameter.KEYWORD_ONLY
+    for marker in _markers_of(parameter):
+        if isinstance(marker, Option) and not is_option:
+            reason = (
+                f"parameter {parameter.name!r} is an argument, taken by position, but is "
+                "marked Option(...); move it after a bare * or mark it Argument(...)"
+            )
+            raise CommandSignatureError(command, reason)
+        if isinstance(marker, Argument) and is_option:
+            reason = (
+                f"parameter {parameter.name!r} is an option, after a bare *, but is "
+                "marked Argument(...); move it before the * or mark it Option(...)"
+            )
+            raise CommandSignatureError(command, reason)
+
+
+def _for_parser(parameter: inspect.Parameter) -> inspect.Parameter:
+    """Return ``parameter`` with its ``Argument`` / ``Option`` markers in the parser's terms."""
+    annotation = _annotation_of(parameter)
+    if not _markers_of(parameter):
+        return parameter
+    wrapped, *metadata = cast("tuple[object, ...]", get_args(annotation))
+    translated = [_parser_setting(item) for item in metadata]
+    annotated: Any = Annotated  # pyright: ignore[reportExplicitAny] — built from a runtime tuple.
+    return parameter.replace(annotation=cast("object", annotated[(wrapped, *translated)]))
+
+
+def _parser_setting(item: object) -> object:
+    """Translate one marker into the parser's settings; leave anything else as it is."""
+    if isinstance(item, Option):
+        return Parameter(
+            name=item.name,
+            alias=item.aliases or None,
+            help=item.help,
+            env_var=item.env_var,
+            negative=item.negative,
+            count=True if item.count else None,
+            validator=_parser_validator(item.validator),
+        )
+    if isinstance(item, Argument):
+        return Parameter(
+            name=item.name,
+            help=item.help,
+            env_var=item.env_var,
+            validator=_parser_validator(item.validator),
+        )
+    return item
+
+
+def _parser_validator(validator: Validator | None) -> tuple[Callable[[object, object], None], ...]:
+    """Adapt ``validator`` — called with the value — to the parser's ``(type, value)`` shape.
+
+    ``None`` never reaches it: the parser hands over the default of an ``X | None``
+    parameter left out, and there is nothing to validate there.
+    """
+    if validator is None:
+        return ()
+    check = cast("Callable[[object], object]", validator)
+
+    def validate(type_: object, value: object) -> None:
+        del type_
+        if value is not None:  # an ``X | None`` left out: nothing to validate
+            _ = check(value)
+
+    return (validate,)
 
 
 def _by_keyword(parameter: inspect.Parameter, by_position: bool) -> bool:
