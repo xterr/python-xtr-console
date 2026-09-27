@@ -34,6 +34,11 @@ trio = [
     "cyclopts[trio]>=5.0,<6",
 ]
 
+# Advertises the bundle so debug:bundles can name it when installed but not listed.
+# Advertising activates nothing: an application lists the bundles it wants.
+[project.entry-points."xtr_dependency_injection.bundles"]
+console = "xtr_console.bundle:ConsoleBundle"
+
 [dependency-groups]
 dev = [
     "basedpyright>=1.21",

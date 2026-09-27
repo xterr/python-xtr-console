@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import final
 
-from xtr_dependency_injection import (  # noqa: TC002 — the engine reads the annotations at runtime.
+from xtr_dependency_injection import (
     Injected,
     KernelInterface,
     ServiceKey,
+    qualified_name,
 )
+from xtr_dependency_injection.bundle import installed_bundles
 
 from xtr_console import ConsoleStyle, ExitCode, as_command
 
@@ -18,11 +20,27 @@ __all__ = ["DebugBundlesCommand", "DebugConfigCommand", "DebugContainerCommand"]
 @as_command("debug:bundles")
 @final
 class DebugBundlesCommand:
-    """List every bundle the kernel considered and what it decided about it."""
+    """List every bundle the kernel considered, and the installed ones it did not."""
 
     async def __call__(self, io: ConsoleStyle, kernel: Injected[KernelInterface]) -> int:
-        """Print the ``bundles`` section of the kernel's report."""
+        """Print the ``bundles`` section of the kernel's report, then the bundles left out.
+
+        A bundle an installed distribution advertises but the application
+        neither lists nor has required is usually a package added and never
+        activated — nothing fails, its services are simply absent.
+        """
         io.console.print(kernel.report.render("bundles"))
+        considered = {bundle.qualname for bundle in kernel.report.bundles}
+        left_out = tuple(
+            (bundle.metadata().name, qualified_name(bundle))
+            for bundle in installed_bundles()
+            if qualified_name(bundle) not in considered
+        )
+        if left_out:
+            io.newline()
+            io.section("Installed, not active")
+            io.table(("Name", "Class"), left_out)
+            io.note("List a bundle in the application's bundles.py to activate it.")
         return ExitCode.SUCCESS
 
 

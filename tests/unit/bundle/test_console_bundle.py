@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 import pytest
-from xtr_dependency_injection import Kernel
+from xtr_dependency_injection import Bundle, Kernel, as_bundle, qualified_name
 from xtr_dependency_injection.testing import assert_zero_config
 
 from tests.fixtures import app_env, app_one
@@ -13,9 +14,17 @@ from xtr_console import Application, ApplicationTester, ExitCode
 from xtr_console.bundle import ConsoleBundle, ConsoleConfig
 
 if TYPE_CHECKING:
+    from xtr_dependency_injection.bundle.bundle import AnyBundle
     from xtr_service_contracts import ContainerInterface
 
 pytestmark = pytest.mark.anyio
+
+_DEBUG_COMMANDS = importlib.import_module("xtr_console.bundle.debug_commands")
+
+
+@as_bundle("idle")
+class IdleBundle(Bundle):
+    """Installed, as far as a test says, and listed by no application."""
 
 
 async def test_zero_config_boots_and_shuts_down() -> None:
@@ -81,6 +90,42 @@ async def test_debug_bundles_prints_the_bundles_section() -> None:
     assert code == ExitCode.SUCCESS
     assert "console" in tester.display
     assert "Bundles" in tester.display
+
+
+async def _debug_bundles(
+    monkeypatch: pytest.MonkeyPatch, installed: tuple[type[AnyBundle], ...]
+) -> ApplicationTester:
+    """Run ``debug:bundles`` on app_one with ``installed`` as the advertised bundles."""
+    monkeypatch.setattr(_DEBUG_COMMANDS, "installed_bundles", lambda: installed)
+    kernel = Kernel(app_one.__name__, env="test")
+    booted = await kernel.boot()
+    try:
+        container: ContainerInterface = booted.container
+        tester = ApplicationTester(await container.get(Application))
+        assert await tester.execute(["debug:bundles"]) == ExitCode.SUCCESS
+    finally:
+        await booted.shutdown()
+    return tester
+
+
+async def test_debug_bundles_names_an_installed_bundle_the_application_left_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tester = await _debug_bundles(monkeypatch, (ConsoleBundle, IdleBundle))
+
+    left_out = tester.display.split("Installed, not active", 1)[1]
+    assert "idle" in left_out
+    assert qualified_name(IdleBundle) in left_out
+    assert qualified_name(ConsoleBundle) not in left_out
+    assert "bundles.py" in left_out
+
+
+async def test_debug_bundles_adds_nothing_when_every_installed_bundle_is_considered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tester = await _debug_bundles(monkeypatch, (ConsoleBundle,))
+
+    assert "Installed, not active" not in tester.display
 
 
 async def test_debug_config_prints_the_named_bundle_config() -> None:
