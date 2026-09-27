@@ -18,7 +18,7 @@ from rich.text import Text
 
 from .command import CommandSelection, CommandSignature, DefaultCommandInvoker, default_registry
 from .command.command_descriptor import function_of
-from .exception import EventLoopRunningError, InvalidCommandResultError
+from .exception import ConsoleError, EventLoopRunningError, InvalidCommandResultError
 from .exit_code import ExitCode
 from .global_options import GlobalOptions, list_global_options
 from .list_command import with_builtin_list
@@ -163,7 +163,9 @@ class Application:
         style = _terminal_style()
         selection = self._configure(argv, style)
         os.environ[SHELL_VERBOSITY] = str(style.verbosity.shell_level)
-        app = self._build(style, selection.commands)
+        app = self._build_or_report(style, selection.commands)
+        if app is None:
+            return ExitCode.FAILURE
         try:
             code = cast("int", app(selection.tokens, exit_on_error=False))
         except CycloptsError:
@@ -185,7 +187,9 @@ class Application:
         """
         style = style if style is not None else _terminal_style()
         selection = self._configure(argv, style)
-        app = self._build(style, selection.commands)
+        app = self._build_or_report(style, selection.commands)
+        if app is None:
+            return ExitCode.FAILURE
         try:
             code = cast("int", await app.run_async(selection.tokens, exit_on_error=False))
         except CycloptsError:
@@ -206,6 +210,22 @@ class Application:
             self._commands.commands(), self._name, self._version, self._description
         )
         return CommandSelection.of(commands, options.remaining)
+
+    def _build_or_report(
+        self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]
+    ) -> App | None:
+        """Build the parser for ``commands``, or report why a command cannot be built.
+
+        Reported, and ``None`` returned, as an exception escaping a command is
+        with ``catch_exceptions``; raised otherwise.
+        """
+        try:
+            return self._build(style, commands)
+        except ConsoleError as error:
+            if not self._catch_exceptions:
+                raise
+            render_exception(error, style)
+            return None
 
     def _build(self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]) -> App:
         """Build the parser for ``commands``."""
@@ -346,8 +366,27 @@ def _exit_code(command: CommandDescriptor, result: object) -> int:
 
 
 def _loop_running() -> bool:
+    """Report whether this thread is inside an asyncio or a trio run already."""
     try:
         _ = asyncio.get_running_loop()
+    except RuntimeError:
+        return _trio_running()
+    return True
+
+
+def _trio_running() -> bool:
+    """Report whether this thread is inside a trio run.
+
+    Looked up rather than imported: trio is an extra, and a run of it can
+    only be under way once something has imported it.
+    """
+    trio = sys.modules.get("trio")
+    lowlevel: object = getattr(trio, "lowlevel", None)
+    current_task: object = getattr(lowlevel, "current_task", None)
+    if not callable(current_task):
+        return False
+    try:
+        _ = current_task()
     except RuntimeError:
         return False
     return True

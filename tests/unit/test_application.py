@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+from types import SimpleNamespace
 from typing import cast, final
 
 import pytest
@@ -522,10 +524,20 @@ async def test_a_broken_declaration_does_not_stop_another_command(
     assert await tester.execute(["user:create", "ada@example.com"]) == ExitCode.SUCCESS
 
 
-async def test_a_broken_declaration_still_fails_the_command_list(
+async def test_a_broken_declaration_fails_the_command_list_with_its_error_reported(
     registry: CommandsLocator, tester: ApplicationTester
 ) -> None:
     _ = as_command("broken", registry=registry)(broken_command)
+
+    assert await tester.execute(["--help"]) == ExitCode.FAILURE
+    assert "broken" in tester.error_display
+
+
+async def test_a_broken_declaration_fails_the_command_list_with_its_error_raised(
+    registry: CommandsLocator,
+) -> None:
+    _ = as_command("broken", registry=registry)(broken_command)
+    tester = ApplicationTester(Application("acme", commands=registry, catch_exceptions=False))
 
     with pytest.raises(CommandSignatureError):
         _ = await tester.execute(["--help"])
@@ -925,3 +937,27 @@ async def test_chained_errors_are_reported_cause_first(registry: CommandsLocator
 async def test_run_refuses_to_start_a_loop_inside_a_running_one(registry: CommandsLocator) -> None:
     with pytest.raises(EventLoopRunningError):
         _ = Application("acme", commands=registry).run([])
+
+
+def test_run_refuses_to_start_a_loop_inside_a_running_trio_one(
+    registry: CommandsLocator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inside_a_task = SimpleNamespace(lowlevel=SimpleNamespace(current_task=object))
+    monkeypatch.setitem(sys.modules, "trio", inside_a_task)
+
+    with pytest.raises(EventLoopRunningError):
+        _ = Application("acme", commands=registry).run([])
+
+
+def test_run_starts_a_loop_when_trio_is_imported_but_not_running(
+    registry: CommandsLocator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def outside_a_task() -> object:
+        raise RuntimeError
+
+    monkeypatch.setitem(
+        sys.modules, "trio", SimpleNamespace(lowlevel=SimpleNamespace(current_task=outside_a_task))
+    )
+    monkeypatch.delenv(SHELL_VERBOSITY, raising=False)  # run() writes it back
+
+    assert Application("acme", commands=registry).run(["list"]) == ExitCode.SUCCESS

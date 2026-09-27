@@ -545,7 +545,7 @@ code = await application.run_async(["user:create", "ada@example.com"])  # on the
 - Running a command builds only that command, so an application with thousands of commands
   starts a command as fast as one with a handful; the full list is built for `--help`. A command
   whose annotations cannot be evaluated fails the list — with a `CommandSignatureError` naming
-  it — but not the other commands.
+  it, reported like any exception under `catch_exceptions` — but not the other commands.
 
 ## Listing commands
 
