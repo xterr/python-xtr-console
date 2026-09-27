@@ -6,6 +6,7 @@ from io import StringIO
 
 import pytest
 from xtr_logging import LoggerFactory, LoggingConfig
+from xtr_logging import Verbosity as LoggingVerbosity
 from xtr_logging.config import ConsoleHandlerSpec
 from xtr_logging.processor.processor_registry import ProcessorRegistry
 
@@ -68,3 +69,11 @@ def test_the_core_never_imports_xtr_logging() -> None:
     )
 
     assert result.stdout.strip() == "False"
+
+
+def test_both_verbosities_name_the_same_levels_with_the_same_values() -> None:
+    """The integration converts between the two by value, so they must not drift apart."""
+    ours = {member.name: member.value for member in Verbosity}
+    theirs = {member.name: member.value for member in LoggingVerbosity}
+
+    assert ours == theirs
