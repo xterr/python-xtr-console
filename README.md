@@ -46,6 +46,7 @@ output is [rich](https://github.com/Textualize/rich).
 - [Verbosity and global options](#verbosity-and-global-options)
 - [The application](#the-application)
 - [Listing commands](#listing-commands)
+- [Use in an application](#use-in-an-application)
 - [Kernel / bundle](#kernel--bundle)
 - [Testing your commands](#testing-your-commands)
 - [Errors](#errors)
@@ -584,6 +585,27 @@ $ acme list nope                   # unknown namespace, exit code 2
 - **A user command named `list`, or answering to `list` as an alias, overrides the built-in.**
   Declare one to replace it entirely — its output, its exit codes, its arguments.
 
+## Use in an application
+
+Everything adding this package to an application on
+[xtr-dependency-injection](../xtr-dependency-injection) takes — and, read backwards, what removing it undoes.
+
+- **Install** — `uv add "xtr-console[di]"`; add `trio` to run commands on trio.
+- **Activate** — `ConsoleBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
+  from `xtr_console.bundle`.
+- **Entry point** — `<app>/__main__.py` running `raise SystemExit(kernel.run(console))`, with
+  `console` from `xtr_console.bundle`, and a script pointing at it in `pyproject.toml`
+  (`[project.scripts] app = "app.__main__:main"` when it is wrapped in a `main()`).
+- **Brings along** — the logging bundle, when xtr-logging is installed.
+- **Configure** — optional: with no configuration the application is named after the kernel
+  and has no version. `<app>/config/console.py`, a `@configure` function returning
+  `ConsoleConfig`, sets them — see [Kernel / bundle](#kernel--bundle).
+- **Environment** — nothing required; `SHELL_VERBOSITY` sets the starting verbosity.
+- **Ignore** — nothing.
+- **Remove** — drop the `BUNDLES` entry, the entry point and its script, delete
+  `<app>/config/console.py`, then `uv remove xtr-console`.
+- **Check** — `<script> debug:bundles` runs, and shows `console` as `listed` and `active`.
+
 ## Kernel / bundle
 
 An application using [xtr-dependency-injection](../xtr-dependency-injection) lists
@@ -647,7 +669,7 @@ The bundle also ships three debug commands the kernel's report drives:
 
 | Command | What it prints |
 | --- | --- |
-| `debug:bundles` | Every bundle the kernel considered — source, state, class, required peers |
+| `debug:bundles` | Every bundle the kernel considered — source, state, class, required peers — then every installed bundle the application left out |
 | `debug:config [bundle]` | Every bundle's resolved config, or one when named |
 | `debug:container [--tag TAG]` | Every compiled definition, or the ones tagged `TAG` |
 
