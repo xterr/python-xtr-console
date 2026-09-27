@@ -558,6 +558,11 @@ def verbose_by_alias(*, depth: Annotated[int, Option(alias="-v", count=True)] = 
     return 0
 
 
+def deep_verbose_by_alias(*, deep: Annotated[bool, Option(alias="-vvvv")] = False) -> int:
+    del deep
+    return 0
+
+
 def silent_by_rename(*, mute: Annotated[bool, Option(name="silent")] = False) -> int:
     del mute
     return 0
@@ -573,6 +578,7 @@ def ansi_by_negative(*, color: Annotated[bool, Option(negative="--no-ansi")] = T
     [
         (quiet_by_name, "--quiet"),
         (verbose_by_alias, "-v"),
+        (deep_verbose_by_alias, "-vvvv"),
         (silent_by_rename, "--silent"),
         (ansi_by_negative, "--no-ansi"),
     ],

@@ -13,7 +13,7 @@ from cyclopts import Parameter
 
 from xtr_console.attribute import Argument, Option
 from xtr_console.exception import CommandSignatureError
-from xtr_console.global_options import GLOBAL_FLAGS
+from xtr_console.global_options import is_global_flag
 from xtr_console.style import ConsoleStyle
 
 from .command_arguments import CommandArguments
@@ -91,7 +91,7 @@ class CommandSignature:
             if _takes_help_over(parameter):
                 reason = "parameter 'help' would take --help over; rename it with Option(name=...)"
                 raise CommandSignatureError(command.name, reason)
-            claimed = sorted(GLOBAL_FLAGS.intersection(_option_names(parameter)))
+            claimed = sorted(filter(is_global_flag, _option_names(parameter)))
             if claimed:
                 reason = (
                     f"parameter {parameter.name!r} would take the global option {claimed[0]} "

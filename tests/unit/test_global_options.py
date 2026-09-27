@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from xtr_console import ConsoleStyle, Verbosity
-from xtr_console.global_options import GlobalOptions
+from xtr_console.global_options import GLOBAL_FLAGS, GlobalOptions, is_global_flag
 
 
 @pytest.mark.parametrize(
@@ -95,3 +95,13 @@ def test_applying_sets_the_verbosity_asked_for() -> None:
     GlobalOptions.parse(["-vvv"]).apply(style)
 
     assert style.verbosity is Verbosity.DEBUG
+
+
+@pytest.mark.parametrize("name", [*GLOBAL_FLAGS, "-vvvv", "--verbose=2"])
+def test_every_flag_the_command_line_takes_is_a_global_flag(name: str) -> None:
+    assert is_global_flag(name)
+
+
+@pytest.mark.parametrize("name", ["-x", "--verbosity", "-vx", "--quietly"])
+def test_a_flag_the_command_line_leaves_alone_is_not_a_global_flag(name: str) -> None:
+    assert not is_global_flag(name)

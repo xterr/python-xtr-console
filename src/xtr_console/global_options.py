@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
     from .style import ConsoleStyle
 
-__all__ = ["GLOBAL_FLAGS", "GlobalOptions", "list_global_options"]
+__all__ = ["GLOBAL_FLAGS", "GlobalOptions", "is_global_flag", "list_global_options"]
 
 _END_OF_OPTIONS: Final = "--"
 _SHORT_VERBOSE: Final = re.compile(r"-v+")
@@ -113,6 +113,15 @@ def list_global_options(app: App, group: Group) -> None:
     """
     for name, aliases, description in _HELP:
         _ = app.command(_listed_only, name=name, alias=aliases, group=group, help=description)
+
+
+def is_global_flag(name: str) -> bool:
+    """Tell whether the application takes ``name`` for itself, as it reads a command line.
+
+    Asks the same matcher the command line is read with, so no spelling it
+    takes — ``-vvvv`` as much as ``-v`` — is missed.
+    """
+    return _verbose_level(name) is not None or name in _SWITCHES
 
 
 def _listed_only() -> int:
