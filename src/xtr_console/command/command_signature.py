@@ -321,11 +321,18 @@ def _members_of(annotation: object) -> tuple[object, ...]:
 
 
 def _is_style(annotation: object) -> bool:
-    """Report whether ``annotation`` asks for the style, ``X | None`` included."""
+    """Report whether ``annotation`` asks for the style, ``X | None`` and ``Annotated`` included."""
     return any(
         isinstance(member, type) and issubclass(member, ConsoleStyle)
-        for member in _members_of(annotation)
+        for member in map(_without_metadata, _members_of(_without_metadata(annotation)))
     )
+
+
+def _without_metadata(annotation: object) -> object:
+    """Return the type ``Annotated`` wraps, or ``annotation`` itself."""
+    if get_origin(annotation) is Annotated:
+        return cast("object", get_args(annotation)[0])
+    return annotation
 
 
 def _supplied_by_container(annotation: object) -> bool:

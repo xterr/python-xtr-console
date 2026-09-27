@@ -200,6 +200,24 @@ def test_an_optional_style_is_still_the_style() -> None:
     assert (signature.styled, list(signature.command_line.parameters)) == (("io",), ["name"])
 
 
+def test_an_annotated_style_is_still_the_style() -> None:
+    def command(name: str, io: Annotated[ConsoleStyle, "the console"]) -> int:
+        del name, io
+        return 0
+
+    signature = signature_of(command)
+
+    assert (signature.styled, list(signature.command_line.parameters)) == (("io",), ["name"])
+
+
+def test_an_optional_annotated_style_is_still_the_style() -> None:
+    def command(io: Annotated[ConsoleStyle, "the console"] | None = None) -> int:
+        del io
+        return 0
+
+    assert signature_of(command).styled == ("io",)
+
+
 def test_a_typing_optional_style_is_still_the_style() -> None:
     def command(io: object = None) -> int:
         del io
