@@ -10,7 +10,7 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast, final
 
 from cyclopts import App, Group, Parameter
-from cyclopts.exceptions import CycloptsError
+from cyclopts.exceptions import CycloptsError, MissingArgumentError
 from cyclopts.help import DefaultFormatter, PanelSpec, TableSpec
 from rich import box
 from rich.markup import escape
@@ -161,9 +161,9 @@ class Application:
         if _loop_running():
             raise EventLoopRunningError
         style = _terminal_style()
-        selection = self._configure(argv, style)
+        selection, taken = self._configure(argv, style)
         os.environ[SHELL_VERBOSITY] = str(style.verbosity.shell_level)
-        app = self._build_or_report(style, selection.commands)
+        app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
         try:
@@ -186,8 +186,8 @@ class Application:
         run with that code rather than leaving the process.
         """
         style = style if style is not None else _terminal_style()
-        selection = self._configure(argv, style)
-        app = self._build_or_report(style, selection.commands)
+        selection, taken = self._configure(argv, style)
+        app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
         try:
@@ -198,8 +198,13 @@ class Application:
             return _exit_code_of(stop, style)
         return code
 
-    def _configure(self, argv: Sequence[str] | None, style: ConsoleStyle) -> CommandSelection:
+    def _configure(
+        self, argv: Sequence[str] | None, style: ConsoleStyle
+    ) -> tuple[CommandSelection, tuple[str, ...]]:
         """Apply the global options in ``argv`` to ``style``; select from what is left.
+
+        The global options taken out are returned alongside, for the error
+        reported when one stood where an option's value belongs.
 
         The built-in ``list`` command is added unless the user declared one
         under that name (or an alias): a user's ``list`` wins.
@@ -209,10 +214,10 @@ class Application:
         commands = with_builtin_list(
             self._commands.commands(), self._name, self._version, self._description
         )
-        return CommandSelection.of(commands, options.remaining)
+        return CommandSelection.of(commands, options.remaining), options.taken
 
     def _build_or_report(
-        self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]
+        self, style: ConsoleStyle, commands: Sequence[CommandDescriptor], taken: tuple[str, ...]
     ) -> App | None:
         """Build the parser for ``commands``, or report why a command cannot be built.
 
@@ -220,15 +225,17 @@ class Application:
         with ``catch_exceptions``; raised otherwise.
         """
         try:
-            return self._build(style, commands)
+            return self._build(style, commands, taken)
         except ConsoleError as error:
             if not self._catch_exceptions:
                 raise
             render_exception(error, style)
             return None
 
-    def _build(self, style: ConsoleStyle, commands: Sequence[CommandDescriptor]) -> App:
-        """Build the parser for ``commands``."""
+    def _build(
+        self, style: ConsoleStyle, commands: Sequence[CommandDescriptor], taken: tuple[str, ...]
+    ) -> App:
+        """Build the parser for ``commands``; ``taken`` are the global options read off."""
         header = self._header()
         app = App(
             name=self._name,
@@ -240,7 +247,7 @@ class Application:
             version=header if self._version is not None else None,
             version_format="rich",
             version_flags=("--version", "-V") if self._version is not None else (),
-            error_formatter=_error_block,
+            error_formatter=_error_formatter(taken),
             default_parameter=Parameter(negative=()),
             group_commands=Group("Available commands", sort_key=1, theme=_THEME),
             group_arguments=Group("Arguments", sort_key=1, theme=_THEME),
@@ -344,8 +351,25 @@ def _help_formatter() -> DefaultFormatter:
     )
 
 
-def _error_block(error: CycloptsError) -> Padding:
-    return block("ERROR", Text(str(error)), "white on red")
+def _error_formatter(taken: tuple[str, ...]) -> Callable[[CycloptsError], Padding]:
+    """Return how a parse error is shown, knowing which global options were read off.
+
+    An option left without its value, when a global option was read off the
+    same line, most likely lost it to the application: say so, and how to
+    pass it instead.
+    """
+
+    def error_block(error: CycloptsError) -> Padding:
+        message = str(error)
+        if isinstance(error, MissingArgumentError) and taken:
+            flag = taken[0]
+            message += (
+                f" {flag} is read by the application for itself;"
+                f" to give it as the value, write it joined: --option={flag}."
+            )
+        return block("ERROR", Text(message), "white on red")
+
+    return error_block
 
 
 async def _call(hook: Hook) -> None:

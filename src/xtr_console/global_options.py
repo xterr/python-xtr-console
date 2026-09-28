@@ -66,6 +66,8 @@ class GlobalOptions:
     """``False`` for ``-n``."""
     remaining: tuple[str, ...]
     """The command line without them."""
+    taken: tuple[str, ...] = ()
+    """The tokens read as global options, in order — to explain an option left without a value."""
 
     @classmethod
     def parse(cls, tokens: Sequence[str]) -> GlobalOptions:
@@ -77,6 +79,7 @@ class GlobalOptions:
         seen: set[str] = set()
         level = 0
         remaining: list[str] = []
+        taken: list[str] = []
         for index, token in enumerate(tokens):
             if token == _END_OF_OPTIONS:
                 remaining.extend(tokens[index:])
@@ -84,8 +87,10 @@ class GlobalOptions:
             verbose = _verbose_level(token)
             if verbose is not None:
                 level = max(level, verbose)
+                taken.append(token)
             elif token in _SWITCHES:
                 seen.add(token)
+                taken.append(token)
             else:
                 remaining.append(token)
         return cls(
@@ -93,6 +98,7 @@ class GlobalOptions:
             decorated=_decorated(seen),
             interactive=not _given(seen, _NO_INTERACTION),
             remaining=tuple(remaining),
+            taken=tuple(taken),
         )
 
     def apply(self, style: ConsoleStyle) -> None:

@@ -961,3 +961,31 @@ def test_run_starts_a_loop_when_trio_is_imported_but_not_running(
     monkeypatch.delenv(SHELL_VERBOSITY, raising=False)  # run() writes it back
 
     assert Application("acme", commands=registry).run(["list"]) == ExitCode.SUCCESS
+
+
+async def test_an_option_losing_its_value_to_a_global_flag_says_how_to_pass_it(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    @as_command("echo", registry=registry)
+    async def echo(io: ConsoleStyle, *, message: str) -> int:
+        io.text(message)
+        return ExitCode.SUCCESS
+
+    code = await tester.execute(["echo", "--message", "-q"])
+
+    assert code == ExitCode.INVALID
+    assert "--option=-q" in tester.error_display.replace("\n", " ")
+
+
+async def test_a_global_flag_joined_to_an_option_is_its_value(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    @as_command("echo", registry=registry)
+    async def echo(io: ConsoleStyle, *, message: str) -> int:
+        io.text(message)
+        return ExitCode.SUCCESS
+
+    code = await tester.execute(["echo", "--message=-q"])
+
+    assert code == ExitCode.SUCCESS
+    assert "-q" in tester.display
