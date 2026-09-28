@@ -592,7 +592,8 @@ $ acme list nope                   # unknown namespace, exit code 2
 Everything adding this package to an application on
 [xtr-dependency-injection](../xtr-dependency-injection) takes — and, read backwards, what removing it undoes.
 
-- **Install** — `uv add "xtr-console[di]"`; add `trio` to run commands on trio.
+- **Install** — `uv add "xtr-console[di]"`; add `trio` to run commands on trio, and `logging`
+  for console handlers that follow each command's verbosity.
 - **Activate** — `ConsoleBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
   from `xtr_console.bundle`.
 - **Entry point** — `<app>/__main__.py` running `raise SystemExit(kernel.run(console))`, with

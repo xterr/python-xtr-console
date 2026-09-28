@@ -29,6 +29,10 @@ dependencies = [
 [project.optional-dependencies]
 di = [
     "xtr-dependency-injection>=1.0,<2",
+    "xtr-service-contracts>=1.0,<2",
+]
+logging = [
+    "xtr-logging>=1.0,<2",
 ]
 trio = [
     "cyclopts[trio]>=5.0,<6",
