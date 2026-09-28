@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from xtr_console import CommandSignatureError, CommandsLocator, as_command, default_registry
+from xtr_console.command.commands_declared_on import commands_declared_on
 
 if TYPE_CHECKING:
     from xtr_console import CommandCallable
@@ -96,3 +97,19 @@ def test_a_class_without_call_is_refused() -> None:
 
     with pytest.raises(CommandSignatureError):
         _ = as_command("nope", registry=registry)(declared)
+
+
+def test_a_decorated_subclass_declares_only_its_own_command() -> None:
+    registry = CommandsLocator()
+
+    @as_command("base", registry=registry)
+    class Base:
+        async def __call__(self) -> int:
+            return 0
+
+    @as_command("child", registry=registry)
+    class Child(Base):
+        pass
+
+    assert [entry.name for entry in commands_declared_on(Base)] == ["base"]
+    assert [entry.name for entry in commands_declared_on(Child)] == ["child"]

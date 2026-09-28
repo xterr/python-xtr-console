@@ -20,7 +20,7 @@ import contextlib
 from typing import TYPE_CHECKING, TypeVar, overload
 
 from xtr_console.command.command_descriptor import CommandDescriptor, default_name_of
-from xtr_console.command.commands_declared_on import COMMANDS_ATTRIBUTE
+from xtr_console.command.commands_declared_on import COMMANDS_ATTRIBUTE, commands_declared_on
 from xtr_console.command.default_registry import default_registry
 
 if TYPE_CHECKING:
@@ -109,7 +109,8 @@ def as_command(
         # Dual-mode: also stash the descriptor on the target so a bundle
         # scanning a package rediscovers it per-kernel, without going through
         # the process-wide registry above.
-        existing = getattr(target, COMMANDS_ATTRIBUTE, ())
+        # Only the target's own: a subclass must not carry its parent's descriptors.
+        existing = tuple(commands_declared_on(target))
         with contextlib.suppress(AttributeError, TypeError):
             setattr(target, COMMANDS_ATTRIBUTE, (*existing, descriptor))
         return target

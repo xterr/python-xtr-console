@@ -31,4 +31,7 @@ def commands_declared_on(obj: object) -> Iterable[CommandDescriptor]:
     if not isinstance(declarations, tuple):
         return ()
     typed = cast("tuple[object, ...]", declarations)
-    return tuple(entry for entry in typed if isinstance(entry, CommandDescriptor))
+    # An inherited descriptor belongs to the parent, which declares it itself.
+    return tuple(
+        entry for entry in typed if isinstance(entry, CommandDescriptor) and entry.target is obj
+    )
