@@ -6,6 +6,8 @@ cause. Each carries the data a caller needs as typed attributes rather than
 forcing a message to be parsed.
 """
 
+from __future__ import annotations
+
 from .command_signature_error import CommandSignatureError
 from .console_error import ConsoleError
 from .duplicate_command_error import DuplicateCommandError

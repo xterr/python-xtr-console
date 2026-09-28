@@ -9,6 +9,8 @@ through :mod:`xtr_console.bundle`.
 The core has no dependency-injection container of its own, and imports none.
 """
 
+from __future__ import annotations
+
 from importlib.metadata import version
 
 from .application import Application, Hook

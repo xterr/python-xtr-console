@@ -1,5 +1,7 @@
 """Declaring commands, and turning a parsed command line into a call."""
 
+from __future__ import annotations
+
 from .command_arguments import CommandArguments
 from .command_callable import CommandCallable
 from .command_descriptor import CommandDescriptor, CommandTarget, default_name_of

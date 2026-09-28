@@ -2,3 +2,5 @@
 
 Each module here is reachable only once its extra is installed.
 """
+
+from __future__ import annotations
