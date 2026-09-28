@@ -235,11 +235,14 @@ class ConsoleStyle:
 
         Raises:
             InvalidDefaultError: If ``choices`` are given and ``default`` is
-                neither empty nor one of them.
+                neither empty nor one of them — or is empty while nothing may
+                be asked, since the answer would then be none of them.
         """
         if choices and default and default not in choices:
             raise InvalidDefaultError(question, default, tuple(choices))
         if not self._interactive:
+            if choices and not default:
+                raise InvalidDefaultError(question, default, tuple(choices))
             return default
         prompt = Prompt(_question(question), console=self._console, choices=list(choices) or None)
         try:

@@ -458,7 +458,7 @@ A style built with `interactive=False` asks nothing: every question returns its 
 as in a CI job, or piped answers exhausted — so a question never fails a command. `confirm`
 defaults to `False`, so running out of input declines rather than agrees; pass `default=True`
 where agreeing is the safe answer. A default outside the `choices` raises `InvalidDefaultError`
-before anything is asked. Piped answers are read one per line, in the order asked.
+before anything is asked, and so do `choices` with no default on a style that asks nothing. Piped answers are read one per line, in the order asked.
 
 ## Verbosity and global options
 

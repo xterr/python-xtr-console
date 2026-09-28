@@ -510,5 +510,12 @@ def test_choices_without_a_default_are_accepted() -> None:
     assert Terminal(["admin"]).style.ask("Role?", choices=["user", "admin"]) == "admin"
 
 
+def test_choices_without_a_default_are_refused_when_nothing_may_be_asked() -> None:
+    style = Terminal(interactive=False).style
+
+    with pytest.raises(InvalidDefaultError):
+        _ = style.ask("Role?", choices=["user", "admin"])
+
+
 def test_confirm_left_unanswered_is_a_no() -> None:
     assert Terminal([""]).style.confirm("Delete everything?") is False
