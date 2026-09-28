@@ -12,12 +12,16 @@ from xtr_dependency_injection import (
 )
 from xtr_dependency_injection.bundle import installed_bundles
 
-from xtr_console import ConsoleStyle, ExitCode, as_command
+from xtr_console import CommandsLocator, ConsoleStyle, ExitCode, as_command
 
 __all__ = ["DebugBundlesCommand", "DebugConfigCommand", "DebugContainerCommand"]
 
+# The bundle finds these commands on the classes themselves; this registry only
+# keeps the declaration out of the process-wide one a container-less app reads.
+_DEBUG_REGISTRY = CommandsLocator()
 
-@as_command("debug:bundles")
+
+@as_command("debug:bundles", registry=_DEBUG_REGISTRY)
 @final
 class DebugBundlesCommand:
     """List every bundle the kernel considered, and the installed ones it did not."""
@@ -44,7 +48,7 @@ class DebugBundlesCommand:
         return ExitCode.SUCCESS
 
 
-@as_command("debug:config")
+@as_command("debug:config", registry=_DEBUG_REGISTRY)
 @final
 class DebugConfigCommand:
     """Show the resolved configuration of every bundle, or of one when named."""
@@ -67,7 +71,7 @@ class DebugConfigCommand:
         return ExitCode.SUCCESS
 
 
-@as_command("debug:container")
+@as_command("debug:container", registry=_DEBUG_REGISTRY)
 @final
 class DebugContainerCommand:
     """List every compiled definition; ``--tag`` filters by tag name."""
