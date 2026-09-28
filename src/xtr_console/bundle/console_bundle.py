@@ -90,6 +90,7 @@ def _application_factory(*, has_logging: bool) -> Callable[..., Application]:
     if has_logging:
         from xtr_logging import LoggerFactory  # noqa: PLC0415 — optional peer.
 
+        # Optional peer, imported only when logging is active.
         from xtr_console.integration.xtr_logging import follow  # noqa: PLC0415
 
         def application_with_logging(

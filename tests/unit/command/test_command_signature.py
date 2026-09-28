@@ -393,6 +393,7 @@ async def test_options_left_out_take_their_defaults(parser: ApplicationTester) -
     [
         (("--ratio", "1.5"), "ratio", 1.5),
         (("--ratio=2.5",), "ratio", 2.5),
+        # The naive datetime the option parses to.
         (("--when", "2026-01-02T03:04:05"), "when", datetime(2026, 1, 2, 3, 4, 5)),  # noqa: DTZ001
         (("-ddd",), "depth", 3),
         (("--depth", "--depth"), "depth", 2),
@@ -538,6 +539,7 @@ def test_a_parameter_named_help_is_refused() -> None:
 
 
 def test_a_parameter_named_help_but_renamed_is_accepted() -> None:
+    # A parameter named help is the case under test.
     def command(*, help: Annotated[str, Option(name="--topic")] = "") -> int:  # noqa: A002
         del help
         return 0

@@ -350,6 +350,7 @@ def _supplied_by_container(annotation: object) -> bool:
 @cache
 def _container_check() -> Callable[[object], bool] | None:
     try:
+        # The container is an optional peer.
         from xtr_dependency_injection import is_container_supplied  # noqa: PLC0415
     except ImportError:
         return None

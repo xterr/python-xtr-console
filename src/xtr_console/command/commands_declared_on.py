@@ -25,6 +25,7 @@ def commands_declared_on(obj: object) -> Iterable[CommandDescriptor]:
     :class:`~xtr_console.CommandsLocator`, and — for classes — becomes a
     container-built service.
     """
+    # The command_descriptor module imports this one.
     from .command_descriptor import CommandDescriptor  # noqa: PLC0415
 
     declarations: object = getattr(obj, COMMANDS_ATTRIBUTE, ())
