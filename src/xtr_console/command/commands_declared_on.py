@@ -26,7 +26,7 @@ def commands_declared_on(obj: object) -> Iterable[CommandDescriptor]:
     container-built service.
     """
     # The command_descriptor module imports this one.
-    from .command_descriptor import CommandDescriptor  # noqa: PLC0415
+    from .command_descriptor import CommandDescriptor  # noqa: PLC0415 — import cycle
 
     declarations: object = getattr(obj, COMMANDS_ATTRIBUTE, ())
     if not isinstance(declarations, tuple):

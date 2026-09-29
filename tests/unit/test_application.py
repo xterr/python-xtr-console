@@ -410,6 +410,21 @@ async def test_an_interrupted_command_ends_the_run_with_130(
     assert await tester.execute(["wait"]) == 130
 
 
+async def test_shutdown_hooks_run_when_a_command_is_interrupted(registry: CommandsLocator) -> None:
+    events: list[str] = []
+
+    @as_command("wait", registry=registry)
+    async def wait() -> int:
+        raise KeyboardInterrupt
+
+    application = Application("acme", commands=registry)
+    application.on_shutdown(lambda: events.append("shutdown"))
+
+    code = await ApplicationTester(application).execute(["wait"])
+
+    assert (code, events) == (130, ["shutdown"])
+
+
 async def test_shutdown_hooks_run_when_a_command_exits(registry: CommandsLocator) -> None:
     events: list[str] = []
 

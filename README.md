@@ -479,7 +479,9 @@ Every command takes these options, before or after its name —
 `--silent` wins over `-q`, which wins over `-v`; `--ansi` wins over `--no-ansi`. Everything after
 a bare `--` belongs to the command: `acme grep -- -v` passes `-v` as an argument. An option whose
 value is one of these flags takes it joined — `acme echo --message=-q` — since `--message -q`
-leaves the option without a value, and the error says so. A command option
+leaves the option without a value, and the error says so. A positional argument has no such
+check: `acme grep -q` greps for nothing and runs quietly, so pass it after `--`. Short flags
+are read one per token — `-v -q`, not `-vq`, which is left to the command. A command option
 cannot claim one of these names — see [Fine-tuning](#fine-tuning-with-parameter).
 
 A command reads the verbosity from its style and says more when asked to:

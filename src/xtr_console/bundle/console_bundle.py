@@ -9,7 +9,9 @@ When the ``logging`` bundle is active, the console handlers of its
 ``LoggerFactory`` follow each command's verbosity automatically.
 
 
-Runtime annotations only — the engine evaluates the factory signatures as strings.
+Annotations stay evaluated here, unlike every other module: the factory for the
+logging peer names a type imported inside a function, which the container
+could not resolve from a string annotation.
 """
 
 from collections.abc import Callable
@@ -91,7 +93,7 @@ def _application_factory(*, has_logging: bool) -> Callable[..., Application]:
         from xtr_logging import LoggerFactory  # noqa: PLC0415 — optional peer.
 
         # Optional peer, imported only when logging is active.
-        from xtr_console.integration.xtr_logging import follow  # noqa: PLC0415
+        from xtr_console.integration.xtr_logging import follow  # noqa: PLC0415 — optional peer
 
         def application_with_logging(
             config: ConsoleConfig,
