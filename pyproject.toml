@@ -1,6 +1,6 @@
 [project]
 name = "xtr-console"
-version = "1.5.0"
+version = "2.0.0"
 description = "Async-native console applications for Python: commands as functions or classes, declared once and wired by a container."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,11 +28,11 @@ dependencies = [
 
 [project.optional-dependencies]
 di = [
-    "xtr-dependency-injection>=1.0,<2",
-    "xtr-service-contracts>=1.0,<2",
+    "xtr-dependency-injection>=2.0,<3",
+    "xtr-service-contracts>=2.0,<3",
 ]
 logging = [
-    "xtr-logging>=1.0,<2",
+    "xtr-logging>=2.0,<3",
 ]
 trio = [
     "cyclopts[trio]>=5.0,<6",
@@ -51,9 +51,9 @@ dev = [
     "pytest-cov>=5",
     "anyio>=4.0",
     "ty>=0.0.83",
-    "xtr-dependency-injection>=1.0,<2",
-    "xtr-logging>=1.0,<2",
-    "xtr-logging-contracts>=1.0,<2",
+    "xtr-dependency-injection>=2.0,<3",
+    "xtr-logging>=2.0,<3",
+    "xtr-logging-contracts>=2.0,<3",
 ]
 
 [build-system]
