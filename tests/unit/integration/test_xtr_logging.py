@@ -7,7 +7,7 @@ from io import StringIO
 import pytest
 from xtr_logging import LoggerFactory, LoggingConfig
 from xtr_logging import Verbosity as LoggingVerbosity
-from xtr_logging.config import ConsoleHandlerSpec
+from xtr_logging.config import ConsoleHandlerConfig
 from xtr_logging.processor.processor_registry import ProcessorRegistry
 
 from xtr_console import ConsoleStyle, Verbosity
@@ -19,7 +19,7 @@ def logged_at(verbosity: Verbosity, *, decorated: bool = False) -> str:
     style = ConsoleStyle(StringIO(), errors, width=200, decorated=False, verbosity=verbosity)
     style.decorated = decorated
     factory = LoggerFactory(
-        LoggingConfig(handlers={"console": ConsoleHandlerSpec()}), registry=ProcessorRegistry()
+        LoggingConfig(handlers={"console": ConsoleHandlerConfig()}), registry=ProcessorRegistry()
     )
     logger = factory.logger()
 
