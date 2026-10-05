@@ -249,6 +249,10 @@ async def tester() -> AsyncIterator[ApplicationTester]:
 
 ## Use in an application
 
+`uv run xtr-recipes recipes:sync` applies the recipe shipped with this package: it lists
+`ConsoleBundle`. That is the steps below a recipe can do; the entry-point step it prints for you to
+make.
+
 1. **Install** — `uv add "xtr-console[di]"`; add `trio` to run on trio, `logging` for console log
    handlers that follow each command's verbosity.
 2. **Activate** — add `ConsoleBundle: {"all": True}` to `BUNDLES` in `<app>/bundles.py`:

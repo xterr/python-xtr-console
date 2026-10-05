@@ -596,6 +596,9 @@ Everything adding this package to an application on
 
 - **Install** — `uv add "xtr-console[di]"`; add `trio` to run commands on trio, and `logging`
   for console handlers that follow each command's verbosity.
+- **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
+  `ConsoleBundle`. It writes no config file or environment; it prints the *Entry point* step, which
+  a recipe cannot make for you.
 - **Activate** — `ConsoleBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
   from `xtr_console.bundle`.
 - **Entry point** — `<app>/__main__.py` running `raise SystemExit(kernel.run(console))`, with

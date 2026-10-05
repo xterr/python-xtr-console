@@ -1,0 +1,22 @@
+# The recipe for xtr-console: what *Use in an application* in the README takes,
+# as data. Keep the two in step — the README is the source.
+
+[bundles]
+# "<module>:<class>" = the environments it is listed with, exactly as in BUNDLES.
+"xtr_console.bundle:ConsoleBundle" = { all = true }
+
+# No [files]: configuring is optional. With none the application is named after
+# the kernel and has no version; one that sets them writes config/console.py
+# itself.
+
+# No [env]: nothing is required. SHELL_VERBOSITY, where it is set, is the
+# verbosity a command starts at.
+
+[gitignore]
+lines = []
+
+[notes]
+steps = [
+  "Write <app>/__main__.py running `raise SystemExit(kernel.run(console))`, with console from xtr_console.bundle, and point a [project.scripts] entry at it: without an entry point there is nothing to run a command with.",
+]
+check = ["<script> debug:bundles — console is listed and active"]
