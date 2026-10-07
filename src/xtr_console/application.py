@@ -162,7 +162,6 @@ class Application:
             raise EventLoopRunningError
         style = _terminal_style()
         selection, taken = self._configure(argv, style)
-        os.environ[SHELL_VERBOSITY] = str(style.verbosity.shell_level)
         app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
@@ -181,7 +180,9 @@ class Application:
 
         Output goes through ``style``, a fresh :class:`ConsoleStyle` on the
         terminal when omitted — its verbosity read from ``SHELL_VERBOSITY``. A
-        style given keeps its own until a global option changes it. A command
+        style given keeps its own until a global option changes it; either way
+        the verbosity the run settles on is written back to
+        ``SHELL_VERBOSITY``, for the processes the command starts. A command
         that exits — ``sys.exit(3)``, or Ctrl-C, which exits ``130`` — ends the
         run with that code rather than leaving the process.
         """
@@ -203,6 +204,10 @@ class Application:
     ) -> tuple[CommandSelection, tuple[str, ...]]:
         """Apply the global options in ``argv`` to ``style``; select from what is left.
 
+        The verbosity settled on is written back to ``SHELL_VERBOSITY`` here,
+        so every way of running — :meth:`run` and :meth:`run_async` alike —
+        hands it to the processes the command starts.
+
         The global options taken out are returned alongside, for the error
         reported when one stood where an option's value belongs.
 
@@ -211,6 +216,7 @@ class Application:
         """
         options = GlobalOptions.parse(list(argv) if argv is not None else sys.argv[1:])
         options.apply(style)
+        os.environ[SHELL_VERBOSITY] = str(style.verbosity.shell_level)
         commands = with_builtin_list(
             self._commands.commands(), self._name, self._version, self._description
         )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from xtr_console import ConsoleStyle, Verbosity
-from xtr_console.global_options import GLOBAL_FLAGS, GlobalOptions, is_global_flag
+from xtr_console.global_options import GlobalOptions, is_global_flag
 
 
 @pytest.mark.parametrize(
@@ -18,6 +18,12 @@ from xtr_console.global_options import GLOBAL_FLAGS, GlobalOptions, is_global_fl
         (["--verbose=1"], Verbosity.VERBOSE),
         (["--verbose=2"], Verbosity.VERY_VERBOSE),
         (["--verbose=3"], Verbosity.DEBUG),
+        (["--verbose=4"], Verbosity.DEBUG),
+        (["--verbose=9"], Verbosity.DEBUG),
+        (["--verbose", "1"], Verbosity.VERBOSE),
+        (["--verbose", "2"], Verbosity.VERY_VERBOSE),
+        (["--verbose", "3"], Verbosity.DEBUG),
+        (["--verbose", "4"], Verbosity.DEBUG),
         (["-v", "-vvv", "-vv"], Verbosity.DEBUG),
         (["-q"], Verbosity.QUIET),
         (["--quiet"], Verbosity.QUIET),
@@ -26,6 +32,23 @@ from xtr_console.global_options import GLOBAL_FLAGS, GlobalOptions, is_global_fl
 )
 def test_it_reads_the_verbosity_asked_for(tokens: list[str], expected: Verbosity | None) -> None:
     assert GlobalOptions.parse(tokens).verbosity is expected
+
+
+def test_a_detached_verbosity_value_is_read_off_with_its_flag() -> None:
+    options = GlobalOptions.parse(["--verbose", "2", "inspect"])
+
+    assert (options.verbosity, options.remaining, options.taken) == (
+        Verbosity.VERY_VERBOSE,
+        ("inspect",),
+        ("--verbose", "2"),
+    )
+
+
+@pytest.mark.parametrize("token", ["inspect", "-1", "0", "2.5", "--"])
+def test_a_token_that_is_no_verbosity_value_stays_the_commands(token: str) -> None:
+    options = GlobalOptions.parse(["--verbose", token])
+
+    assert (options.verbosity, options.remaining) == (Verbosity.VERBOSE, (token,))
 
 
 @pytest.mark.parametrize(
@@ -54,7 +77,7 @@ def test_everything_after_a_bare_double_dash_belongs_to_the_command() -> None:
     assert (options.verbosity, options.remaining) == (None, ("grep", "--", "-v", "-q"))
 
 
-@pytest.mark.parametrize("token", ["--verbose=4", "-vx", "--verbose2", "-qq"])
+@pytest.mark.parametrize("token", ["--verbose=0", "--verbose=x", "-vx", "--verbose2", "-qq"])
 def test_a_token_that_only_looks_like_one_is_left_for_the_parser(token: str) -> None:
     assert GlobalOptions.parse([token]).remaining == (token,)
 
@@ -97,11 +120,29 @@ def test_applying_sets_the_verbosity_asked_for() -> None:
     assert style.verbosity is Verbosity.DEBUG
 
 
-@pytest.mark.parametrize("name", [*GLOBAL_FLAGS, "-vvvv", "--verbose=2"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "--silent",
+        "-q",
+        "--quiet",
+        "-n",
+        "--no-interaction",
+        "--ansi",
+        "--no-ansi",
+        "-v",
+        "-vv",
+        "-vvv",
+        "-vvvv",
+        "--verbose",
+        "--verbose=2",
+        "--verbose=9",
+    ],
+)
 def test_every_flag_the_command_line_takes_is_a_global_flag(name: str) -> None:
     assert is_global_flag(name)
 
 
-@pytest.mark.parametrize("name", ["-x", "--verbosity", "-vx", "--quietly"])
+@pytest.mark.parametrize("name", ["-x", "--verbosity", "-vx", "--quietly", "--verbose=0"])
 def test_a_flag_the_command_line_leaves_alone_is_not_a_global_flag(name: str) -> None:
     assert not is_global_flag(name)

@@ -10,22 +10,19 @@ from .exit_code import ExitCode
 from .verbosity import Verbosity
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping, Sequence
+    from collections.abc import Collection, Sequence
 
     from cyclopts import App, Group
 
     from .style import ConsoleStyle
 
-__all__ = ["GLOBAL_FLAGS", "GlobalOptions", "is_global_flag", "list_global_options"]
+__all__ = ["GlobalOptions", "is_global_flag", "list_global_options"]
 
 _END_OF_OPTIONS: Final = "--"
 _SHORT_VERBOSE: Final = re.compile(r"-v+")
-_LONG_VERBOSE: Final[Mapping[str, int]] = {
-    "--verbose": 1,
-    "--verbose=1": 1,
-    "--verbose=2": 2,
-    "--verbose=3": 3,
-}
+_LONG_VERBOSE: Final = "--verbose"
+_JOINED_VERBOSE: Final = re.compile(r"--verbose=([0-9]+)")
+_DIGITS: Final = re.compile(r"[0-9]+")
 _VERBOSE_LEVELS: Final = (Verbosity.VERBOSE, Verbosity.VERY_VERBOSE, Verbosity.DEBUG)
 _SILENT: Final = frozenset({"--silent"})
 _QUIET: Final = frozenset({"-q", "--quiet"})
@@ -33,9 +30,6 @@ _NO_INTERACTION: Final = frozenset({"-n", "--no-interaction"})
 _ANSI: Final = frozenset({"--ansi"})
 _NO_ANSI: Final = frozenset({"--no-ansi"})
 _SWITCHES: Final = _SILENT | _QUIET | _NO_INTERACTION | _ANSI | _NO_ANSI
-
-GLOBAL_FLAGS: Final = _SWITCHES | {"-v", "-vv", "-vvv", "--verbose"}
-"""Every flag the application reads for itself, whatever the command."""
 
 _HELP: Final = (
     ("--silent", (), "Do not output any message."),
@@ -74,21 +68,29 @@ class GlobalOptions:
         """Take the global options out of ``tokens``.
 
         ``--silent`` wins over ``-q``, which wins over ``-v``; the most
-        ``-v`` given wins among those, ``--ansi`` over ``--no-ansi``.
+        ``-v`` given wins among those, ``--ansi`` over ``--no-ansi``. A
+        verbosity above the highest is that highest, however it is spelled:
+        ``-vvvv``, ``--verbose=9`` and ``--verbose 9`` all debug.
         """
         seen: set[str] = set()
         level = 0
         remaining: list[str] = []
         taken: list[str] = []
-        for index, token in enumerate(tokens):
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
             if token == _END_OF_OPTIONS:
                 remaining.extend(tokens[index:])
                 break
-            verbose = _verbose_level(token)
+            verbose = _verbose(tokens, index)
             if verbose is not None:
-                level = max(level, verbose)
-                taken.append(token)
-            elif token in _SWITCHES:
+                asked, span = verbose
+                level = max(level, asked)
+                taken.extend(tokens[index : index + span])
+                index += span
+                continue
+            index += 1
+            if token in _SWITCHES:
                 seen.add(token)
                 taken.append(token)
             else:
@@ -134,11 +136,42 @@ def _listed_only() -> int:
     return ExitCode.SUCCESS
 
 
+def _verbose(tokens: Sequence[str], index: int) -> tuple[int, int] | None:
+    """Return the verbosity asked for at ``index``, and how many tokens it spans.
+
+    ``None`` when the token asks for none. Only the long spelling takes a
+    detached value — ``--verbose 2`` — so ``-v 2`` still leaves the ``2`` to
+    the command, where a count would read as an argument.
+    """
+    token = tokens[index]
+    joined = _verbose_level(token)
+    if joined is None:
+        return None
+    if token != _LONG_VERBOSE or index + 1 >= len(tokens):
+        return joined, 1
+    detached = _level(tokens[index + 1])
+    return (joined, 1) if detached is None else (detached, 2)
+
+
 def _verbose_level(token: str) -> int | None:
-    """Return how many ``-v`` ``token`` counts for, or ``None`` if it is none."""
+    """Return how many ``-v`` ``token`` counts for on its own, or ``None`` if it is none."""
     if _SHORT_VERBOSE.fullmatch(token):
         return len(token) - 1
-    return _LONG_VERBOSE.get(token)
+    if token == _LONG_VERBOSE:
+        return 1
+    joined = _JOINED_VERBOSE.fullmatch(token)
+    return _level(joined[1]) if joined is not None else None
+
+
+def _level(value: str) -> int | None:
+    """Read a verbosity count; ``None`` when ``value`` is not one.
+
+    Counting starts at one, as ``-v`` does: there is no spelling of ``-v``
+    that asks for none, so ``0`` is not a value here.
+    """
+    if not _DIGITS.fullmatch(value):
+        return None
+    return int(value) or None
 
 
 def _verbosity(seen: Collection[str], level: int) -> Verbosity | None:

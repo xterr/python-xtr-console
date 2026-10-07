@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 from cyclopts import Parameter
 
-from xtr_console.attribute import Argument, Option
+from xtr_console.decorator import Argument, Option
 from xtr_console.exception import CommandSignatureError
 from xtr_console.global_options import is_global_flag
 from xtr_console.style import ConsoleStyle

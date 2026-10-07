@@ -10,7 +10,7 @@ from xtr_dependency_injection import (
     ServiceKey,
     qualified_name,
 )
-from xtr_dependency_injection.bundle import installed_bundles
+from xtr_dependency_injection.bundle import advertised_bundles
 
 from xtr_console import CommandsLocator, ConsoleStyle, ExitCode, as_command
 
@@ -32,12 +32,16 @@ class DebugBundlesCommand:
         A bundle an installed distribution advertises but the application
         neither lists nor has required is usually a package added and never
         activated — nothing fails, its services are simply absent.
+
+        An advertised entry that cannot be loaded is listed too, with what it
+        said: it would otherwise be missing from both lists.
         """
         io.console.print(kernel.report.render("bundles"))
+        advertised = advertised_bundles()
         considered = {bundle.qualname for bundle in kernel.report.bundles}
         left_out = tuple(
             (bundle.metadata().name, qualified_name(bundle))
-            for bundle in installed_bundles()
+            for bundle in advertised.bundles
             if qualified_name(bundle) not in considered
         )
         if left_out:
@@ -45,6 +49,11 @@ class DebugBundlesCommand:
             io.section("Installed, not active")
             io.table(("Name", "Class"), left_out)
             io.note("List a bundle in the application's bundles.py to activate it.")
+        if advertised.unusable:
+            io.newline()
+            io.section("Advertised, could not be loaded")
+            io.table(("Entry point", "Error"), advertised.unusable)
+            io.note("Install what the package's bundle needs, or drop the package.")
         return ExitCode.SUCCESS
 
 

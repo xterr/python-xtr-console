@@ -208,7 +208,7 @@ optional, and so are the parentheses:
   A generator cannot: calling one runs nothing, so it is refused as it is declared.
 - **Classes.** The instance is the command, so `__call__` takes the arguments and options. A class
   is built only when its command runs — with no arguments, or by a container when
-  [one is wired](#wiring-with-a-container). Its help comes from the docstring of `__call__`, or
+  [one is wired](#kernel--bundle). Its help comes from the docstring of `__call__`, or
   failing that of the class.
 - **Sync or async.** Either works. An async command is awaited on the application's event loop;
   a sync one runs on it, so it should not block for long — and cannot call `asyncio.run()`, as a
@@ -239,7 +239,7 @@ A command's signature *is* its command line. Each parameter is filled by one of 
 | Parameter | Filled by |
 | --- | --- |
 | annotated `ConsoleStyle` | the application — see [Writing output](#writing-output) |
-| annotated `Injected[...]`, `Target(...)` or `Autowire(...)` | the container — see [Wiring with a container](#wiring-with-a-container) |
+| annotated `Injected[...]`, `Target(...)` or `Autowire(...)` | the container — see [Kernel / bundle](#kernel--bundle) |
 | anything else | the command line |
 
 Of the command line's share, **a parameter before a bare `*` is an argument, taken by position;
@@ -470,19 +470,23 @@ Every command takes these options, before or after its name —
 | `--silent` | `SILENT` | nothing is printed, not even errors; no questions are asked |
 | `-q`, `--quiet` | `QUIET` | only errors are printed; no questions are asked |
 | | `NORMAL` | an error is reported by its message |
-| `-v`, `--verbose`, `--verbose=1` | `VERBOSE` | an error is reported with its traceback |
-| `-vv`, `--verbose=2` | `VERY_VERBOSE` | |
-| `-vvv`, `--verbose=3` | `DEBUG` | the traceback shows every frame and its local variables |
+| `-v`, `--verbose`, `--verbose=1`, `--verbose 1` | `VERBOSE` | an error is reported with its traceback |
+| `-vv`, `--verbose=2`, `--verbose 2` | `VERY_VERBOSE` | |
+| `-vvv`, `--verbose=3`, `--verbose 3` | `DEBUG` | the traceback shows every frame and its local variables |
 | `-n`, `--no-interaction` | | every question is answered with its default |
 | `--ansi`, `--no-ansi` | | colours and styles forced on, or off |
 
-`--silent` wins over `-q`, which wins over `-v`; `--ansi` wins over `--no-ansi`. Everything after
-a bare `--` belongs to the command: `acme grep -- -v` passes `-v` as an argument. An option whose
-value is one of these flags takes it joined — `acme echo --message=-q` — since `--message -q`
-leaves the option without a value, and the error says so. A positional argument has no such
-check: `acme grep -q` greps for nothing and runs quietly, so pass it after `--`. Short flags
-are read one per token — `-v -q`, not `-vq`, which is left to the command. A command option
-cannot claim one of these names — see [Fine-tuning](#fine-tuning-with-parameter).
+`--silent` wins over `-q`, which wins over `-v`; `--ansi` wins over `--no-ansi`. A verbosity
+above the highest is the highest: `-vvvv`, `--verbose=9` and `--verbose 9` all debug. Only
+`--verbose` takes a count — joined or on its own token — so `acme grep -v 2` still greps for
+`2`, and a count below `1`, such as `--verbose=0`, is left to the parser, which refuses it.
+Everything after a bare `--` belongs to the command: `acme grep -- -v` passes `-v` as an
+argument. An option whose value is one of these flags takes it joined — `acme echo --message=-q`
+— since `--message -q` leaves the option without a value, and the error says so. A positional
+argument has no such check: `acme grep -q` greps for nothing and runs quietly, so pass it after
+`--`. Short flags are read one per token — `-v -q`, not `-vq`, which is left to the command. A
+command option cannot claim one of these names — see
+[Fine-tuning](#fine-tuning-with-argument-and-option).
 
 A command reads the verbosity from its style and says more when asked to:
 
@@ -509,9 +513,10 @@ questions — `is_quiet()` is `-q` alone, not `--silent`. Under
 
 **`SHELL_VERBOSITY`.** When the application builds its own style — `run()`, or `run_async()`
 without `style=` — the verbosity starts from the environment variable, `-2` (silent) to `3`
-(debug); an option on the command line wins. `run()` writes the verbosity it settled on back
-to `SHELL_VERBOSITY`, so a process the command starts — another console, a worker — inherits
-it. `run_async()` never writes it: several runs may share a process.
+(debug); an option on the command line wins. Both `run()` and `run_async()` write the verbosity
+the run settled on back to `SHELL_VERBOSITY`, so a process the command starts — another console,
+a worker — inherits it. Runs sharing a process therefore overwrite each other's value, as they
+do the console handlers'.
 
 ## The application
 
@@ -681,8 +686,8 @@ The bundle also ships three debug commands the kernel's report drives:
 | `debug:config [bundle]` | Every bundle's resolved config, or one when named |
 | `debug:container [--tag TAG]` | Every compiled definition, or the ones tagged `TAG` |
 
-Without a container, everything from the [Wiring section](#writing-output) above still works
-— a command with only command-line and `ConsoleStyle` parameters runs unchanged. A command
+Without a container, everything above this section still works — a command taking only
+command-line parameters and a [`ConsoleStyle`](#writing-output) runs unchanged. A command
 asking for `Injected[...]`, or a class whose constructor needs arguments, raises
 `MissingContainerError` when it runs.
 
@@ -799,8 +804,7 @@ xtr_console/
 ├── exit_code.py          SUCCESS, FAILURE, INVALID
 ├── verbosity.py          SILENT, QUIET, NORMAL, VERBOSE, VERY_VERBOSE, DEBUG
 ├── global_options.py     -v/-vv/-vvv, -q, --silent, -n, --ansi/--no-ansi, read off every command line
-├── decorator/            @as_command
-├── attribute/            Argument, Option — what a parameter says about itself on the command line
+├── decorator/            @as_command, and the Argument / Option markers a parameter carries
 ├── validator/            Range, and the Validator shape any callable fits
 ├── command/              what was declared, who fills which parameter, and how it is called
 ├── style/                ConsoleStyle, escape(), and how an escaping exception is reported

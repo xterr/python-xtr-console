@@ -8,18 +8,21 @@ Every command takes these, before or after its name — `acme -vvv user:create a
 | `--silent` | `SILENT` | nothing printed, not even errors; no questions asked |
 | `-q`, `--quiet` | `QUIET` | only errors printed; no questions asked |
 | | `NORMAL` | an error is reported by its message |
-| `-v`, `--verbose`, `--verbose=1` | `VERBOSE` | an error is reported with its traceback |
-| `-vv`, `--verbose=2` | `VERY_VERBOSE` | |
-| `-vvv`, `--verbose=3` | `DEBUG` | the traceback shows every frame and its locals |
+| `-v`, `--verbose`, `--verbose=1`, `--verbose 1` | `VERBOSE` | an error is reported with its traceback |
+| `-vv`, `--verbose=2`, `--verbose 2` | `VERY_VERBOSE` | |
+| `-vvv`, `--verbose=3`, `--verbose 3` | `DEBUG` | the traceback shows every frame and its locals |
 | `-n`, `--no-interaction` | | every question takes its default |
 | `--ansi`, `--no-ansi` | | colours forced on, or off |
 
-`--silent` wins over `-q`, which wins over `-v`; `--ansi` wins over `--no-ansi`.
+`--silent` wins over `-q`, which wins over `-v`; `--ansi` wins over `--no-ansi`. A verbosity above
+the highest is the highest: `-vvvv`, `--verbose=9` and `--verbose 9` all debug.
 
 ## Parsing details worth knowing
 
 - Everything after a bare `--` belongs to the command: `acme grep -- -v` passes `-v` as an
   argument.
+- Only `--verbose` takes a count, joined or on its own token: `acme grep -v 2` still greps for
+  `2`. A count below `1`, such as `--verbose=0`, is left to the parser, which refuses it.
 - An option whose *value* is one of these flags must be joined: `acme echo --message=-q`.
 - A positional argument gets no such check: `acme grep -q` greps for nothing and runs quietly, so
   pass it after `--`.
@@ -52,8 +55,8 @@ how a command prints what a script reads. `io.error_console` still writes under 
 
 When the application builds its own style — `run()`, or `run_async()` without `style=` — the
 verbosity starts from this environment variable, `-2` (silent) to `3` (debug); a command-line
-option wins. `run()` writes the verbosity it settled on back to it, so a process the command
-starts inherits it. `run_async()` never writes it, since several runs may share a process.
+option wins. Both `run()` and `run_async()` write the verbosity the run settled on back to it, so
+a process the command starts inherits it; runs sharing a process overwrite each other's value.
 `Verbosity.from_shell(value)` and `verbosity.shell_level` convert both ways; the variable's name is
 exported as `SHELL_VERBOSITY`.
 

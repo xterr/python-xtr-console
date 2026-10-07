@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from xtr_dependency_injection import Bundle, Kernel, as_bundle, qualified_name
+from xtr_dependency_injection.bundle import AdvertisedBundles
 from xtr_dependency_injection.testing import assert_zero_config
 
 from tests.fixtures import app_env, app_one
@@ -93,10 +94,14 @@ async def test_debug_bundles_prints_the_bundles_section() -> None:
 
 
 async def _debug_bundles(
-    monkeypatch: pytest.MonkeyPatch, installed: tuple[type[AnyBundle], ...]
+    monkeypatch: pytest.MonkeyPatch,
+    installed: tuple[type[AnyBundle], ...],
+    unusable: tuple[tuple[str, str], ...] = (),
 ) -> ApplicationTester:
-    """Run ``debug:bundles`` on app_one with ``installed`` as the advertised bundles."""
-    monkeypatch.setattr(_DEBUG_COMMANDS, "installed_bundles", lambda: installed)
+    """Run ``debug:bundles`` on app_one with ``installed`` and ``unusable`` advertised."""
+    monkeypatch.setattr(
+        _DEBUG_COMMANDS, "advertised_bundles", lambda: AdvertisedBundles(installed, unusable)
+    )
     kernel = Kernel(app_one.__name__, env="test")
     booted = await kernel.boot()
     try:
@@ -106,6 +111,17 @@ async def _debug_bundles(
     finally:
         await booted.shutdown()
     return tester
+
+
+async def test_debug_bundles_names_an_advertised_entry_that_could_not_be_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failure = ("mail", "ModuleNotFoundError: No module named 'acme_mail'")
+    tester = await _debug_bundles(monkeypatch, (ConsoleBundle,), (failure,))
+
+    unusable = tester.display.split("Advertised, could not be loaded", 1)[1]
+    assert "mail" in unusable
+    assert "acme_mail" in unusable
 
 
 async def test_debug_bundles_names_an_installed_bundle_the_application_left_out(

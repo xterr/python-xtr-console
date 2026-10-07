@@ -11,10 +11,9 @@ The core has no dependency-injection container of its own, and imports none.
 
 from __future__ import annotations
 
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 
-from .application import Application, Hook
-from .attribute import Argument, Option
+from .application import Application, ConfigureHook, Hook
 from .command import (
     CommandArguments,
     CommandCallable,
@@ -26,7 +25,7 @@ from .command import (
     DefaultCommandInvoker,
     default_registry,
 )
-from .decorator import as_command
+from .decorator import Argument, Option, as_command
 from .exception import (
     CommandSignatureError,
     ConsoleError,
@@ -43,7 +42,12 @@ from .tester import ApplicationTester, CommandTester
 from .validator import Range, Validator
 from .verbosity import SHELL_VERBOSITY, Verbosity
 
-__version__ = version("xtr-console")
+try:
+    __version__ = version("xtr-console")
+except PackageNotFoundError:  # pragma: no cover
+    # Running from a source tree with no installed metadata to read; having no
+    # version is better than refusing to import.
+    __version__ = "0+unknown"
 
 __all__ = [
     "SHELL_VERBOSITY",
@@ -59,6 +63,7 @@ __all__ = [
     "CommandTester",
     "CommandsLocator",
     "CommandsLocatorInterface",
+    "ConfigureHook",
     "ConsoleError",
     "ConsoleStyle",
     "DefaultCommandInvoker",

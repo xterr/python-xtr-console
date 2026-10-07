@@ -16,6 +16,7 @@ from xtr_console import (
     CommandSignature,
     CommandSignatureError,
     CommandsLocator,
+    ConfigureHook,
     ConsoleStyle,
     DefaultCommandInvoker,
     EventLoopRunningError,
@@ -281,6 +282,27 @@ async def test_shutdown_hooks_run_when_the_command_raises(registry: CommandsLoca
     _ = await ApplicationTester(application).execute(["boom"])
 
     assert events == ["shutdown"]
+
+
+async def test_a_configure_hook_is_annotated_with_the_published_hook_type(
+    registry: CommandsLocator,
+) -> None:
+    seen: list[Verbosity] = []
+
+    @as_command("work", registry=registry)
+    def work() -> int:
+        return 0
+
+    def tune(style: ConsoleStyle) -> None:
+        seen.append(style.verbosity)
+
+    hook: ConfigureHook = tune
+    application = Application("acme", commands=registry)
+    application.on_configure(hook)
+
+    _ = await ApplicationTester(application).execute(["work", "-v"])
+
+    assert seen == [Verbosity.VERBOSE]
 
 
 async def test_configure_hooks_get_the_configured_style_before_startup(
@@ -662,6 +684,9 @@ def declare_inspect(registry: CommandsLocator) -> None:
         (["-vvv", "inspect"], "DEBUG interactive=True name="),
         (["inspect", "-vv", "--name", "ada"], "VERY_VERBOSE interactive=True name=ada"),
         (["inspect", "--verbose=1"], "VERBOSE interactive=True name="),
+        (["inspect", "--verbose=4"], "DEBUG interactive=True name="),
+        (["--verbose", "2", "inspect"], "VERY_VERBOSE interactive=True name="),
+        (["inspect", "--verbose", "3"], "DEBUG interactive=True name="),
         (["inspect", "-n"], "NORMAL interactive=False name="),
         (["-q", "inspect"], "QUIET interactive=False name="),
     ],
@@ -810,7 +835,7 @@ async def test_a_value_that_is_not_a_verbosity_is_invalid(
 ) -> None:
     declare_inspect(registry)
 
-    assert await tester.execute(["inspect", "--verbose=4"]) == ExitCode.INVALID
+    assert await tester.execute(["inspect", "--verbose=x"]) == ExitCode.INVALID
 
 
 # ─── SHELL_VERBOSITY ─────────────────────────────────────────────
@@ -833,6 +858,16 @@ def test_run_writes_the_verbosity_it_settled_on_back_to_the_shell(
     declare_inspect(registry)
 
     _ = Application("acme", commands=registry).run(["inspect", "-q"])
+
+    assert os.environ[SHELL_VERBOSITY] == "-1"
+
+
+async def test_run_async_writes_the_verbosity_it_settled_on_back_to_the_shell(
+    registry: CommandsLocator,
+) -> None:
+    declare_inspect(registry)
+
+    _ = await Application("acme", commands=registry).run_async(["inspect", "-q"])
 
     assert os.environ[SHELL_VERBOSITY] == "-1"
 
