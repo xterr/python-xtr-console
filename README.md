@@ -24,9 +24,9 @@ session.
   application.
 - 🧱 **Functions or classes** — a class is built only when its command runs, bare or by a
   container.
-- 🧩 **Container-ready** — with the `di` extra, an
-  [xtr-dependency-injection](../xtr-dependency-injection) kernel provides the application;
-  command classes are singletons it builds, and `Injected[...]` parameters are filled per run.
+- 🧩 **Container-ready** — with [xtr-dependency-injection](../xtr-dependency-injection) installed
+  beside it, a kernel provides the application; command classes are singletons it builds, and
+  `Injected[...]` parameters are filled per run.
 - 🎨 **One look** — `ConsoleStyle` gives every command the same titles, outcome blocks, tables,
   progress bars and questions.
 - 🧪 **Testable** — `ApplicationTester` and `CommandTester` capture plain-text output and script
@@ -54,12 +54,15 @@ output is [rich](https://github.com/Textualize/rich).
 ## Install
 
 ```sh
-uv add xtr-console              # the whole core
-uv add "xtr-console[di]"        # + a ConsoleBundle for xtr-dependency-injection
-uv add "xtr-console[trio]"      # + running commands on trio instead of asyncio
+uv add xtr-console                           # the whole library
+uv add "xtr-console[trio]"                   # + running commands on trio instead of asyncio
+uv add xtr-console xtr-dependency-injection  # + the container, for the ConsoleBundle
+uv add xtr-logging                           # beside it: log handlers following each command's verbosity
 ```
 
-Requires Python 3.11+.
+Requires Python 3.11+. Depends on `cyclopts`, `rich` and `typing-extensions` — not on the
+container: the bundle is used when [xtr-dependency-injection](../xtr-dependency-injection) is
+installed beside the package, never as an extra, and commands run without it.
 
 ## Quick start
 
@@ -599,8 +602,9 @@ $ acme list nope                   # unknown namespace, exit code 2
 Everything adding this package to an application on
 [xtr-dependency-injection](../xtr-dependency-injection) takes — and, read backwards, what removing it undoes.
 
-- **Install** — `uv add "xtr-console[di]"`; add `trio` to run commands on trio, and `logging`
-  for console handlers that follow each command's verbosity.
+- **Install** — `uv add xtr-console xtr-dependency-injection`: the bundle needs the container
+  installed beside it, never as an extra. Add `trio` to run commands on trio, and install
+  xtr-logging beside it for console handlers that follow each command's verbosity.
 - **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
   `ConsoleBundle`. It writes no config file or environment; it prints the *Entry point* step, which
   a recipe cannot make for you.
@@ -621,13 +625,14 @@ Everything adding this package to an application on
 
 ## Kernel / bundle
 
-An application using [xtr-dependency-injection](../xtr-dependency-injection) lists
+With [xtr-dependency-injection](../xtr-dependency-injection) installed beside the package — it is
+not a dependency, and nothing outside `xtr_console.bundle` needs it — an application lists
 `ConsoleBundle` in its `app/bundles.py` and configures it with `@configure`. Commands ask
 for what they need the way any container-injected service does; import nothing from this
 library's integration:
 
 ```sh
-uv add "xtr-console[di]"
+uv add xtr-console xtr-dependency-injection
 ```
 
 ```python

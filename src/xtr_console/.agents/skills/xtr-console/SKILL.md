@@ -17,8 +17,8 @@ is how the command writes. Everything runs on one event loop, async or sync.
 - Output: take `io: ConsoleStyle`; call `io.success(...)`, `io.table(...)`, `io.progress(...)`.
 - Exit: `return ExitCode.SUCCESS` / `FAILURE` / `INVALID`, or any `int`.
 - Entry point without a container: `raise SystemExit(Application("acme", "1.2.0").run())`.
-- Entry point with a kernel: `raise SystemExit(kernel.run(console))`, `console` from
-  `xtr_console.bundle`.
+- Entry point with a kernel — xtr-dependency-injection installed beside the package, which does
+  not depend on it: `raise SystemExit(kernel.run(console))`, `console` from `xtr_console.bundle`.
 - Import every command module before the application runs (a `commands/__init__.py` that imports
   them).
 - Inject services: annotate `Injected[...]` from `xtr_dependency_injection`. Never import
@@ -253,8 +253,9 @@ async def tester() -> AsyncIterator[ApplicationTester]:
 `ConsoleBundle`. That is the steps below a recipe can do; the entry-point step it prints for you to
 make.
 
-1. **Install** — `uv add "xtr-console[di]"`; add `trio` to run on trio, `logging` for console log
-   handlers that follow each command's verbosity.
+1. **Install** — `uv add xtr-console xtr-dependency-injection`: the bundle needs the container
+   installed beside it, never as an extra. Add the `trio` extra to run on trio, and install
+   xtr-logging beside it for console log handlers that follow each command's verbosity.
 2. **Activate** — add `ConsoleBundle: {"all": True}` to `BUNDLES` in `<app>/bundles.py`:
 
    ```python

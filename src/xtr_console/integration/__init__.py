@@ -1,6 +1,6 @@
 """Wiring this library into something that owns object construction.
 
-Each module here is reachable only once its extra is installed.
+Each module here is reachable only once the package it wires is installed.
 """
 
 from __future__ import annotations
