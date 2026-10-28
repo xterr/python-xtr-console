@@ -608,26 +608,26 @@ Everything adding this package to an application on
 - **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
   `ConsoleBundle`. It writes no config file or environment; it prints the *Entry point* step, which
   a recipe cannot make for you.
-- **Activate** — `ConsoleBundle: {"all": True}` in `BUNDLES` in `<app>/bundles.py`, imported
+- **Activate** — `ConsoleBundle: {"all": True}` in `BUNDLES` in `<app>/config/bundles.py`, imported
   from `xtr_console.bundle`.
 - **Entry point** — `<app>/__main__.py` running `raise SystemExit(kernel.run(console))`, with
   `console` from `xtr_console.bundle`, and a script pointing at it in `pyproject.toml`
   (`[project.scripts] app = "app.__main__:main"` when it is wrapped in a `main()`).
 - **Brings along** — the logging bundle, when xtr-logging is installed.
 - **Configure** — optional: with no configuration the application is named after the kernel
-  and has no version. `<app>/config/console.py`, a `@configure` function returning
+  and has no version. `<app>/config/packages/console.py`, a `@configure` function returning
   `ConsoleConfig`, sets them — see [Kernel / bundle](#kernel--bundle).
 - **Environment** — nothing required; `SHELL_VERBOSITY` sets the starting verbosity.
 - **Ignore** — nothing.
 - **Remove** — drop the `BUNDLES` entry, the entry point and its script, delete
-  `<app>/config/console.py`, then `uv remove xtr-console`.
+  `<app>/config/packages/console.py`, then `uv remove xtr-console`.
 - **Check** — `<script> debug:bundles` runs, and shows `console` as `listed` and `active`.
 
 ## Kernel / bundle
 
 With [xtr-dependency-injection](../xtr-dependency-injection) installed beside the package — it is
 not a dependency, and nothing outside `xtr_console.bundle` needs it — an application lists
-`ConsoleBundle` in its `app/bundles.py` and configures it with `@configure`. Commands ask
+`ConsoleBundle` in its `app/config/bundles.py` and configures it with `@configure`. Commands ask
 for what they need the way any container-injected service does; import nothing from this
 library's integration:
 
@@ -636,7 +636,7 @@ uv add xtr-console xtr-dependency-injection
 ```
 
 ```python
-# app/bundles.py
+# app/config/bundles.py
 from xtr_console.bundle import ConsoleBundle
 
 BUNDLES = {ConsoleBundle: {"all": True}}

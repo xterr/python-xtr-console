@@ -256,10 +256,10 @@ make.
 1. **Install** — `uv add xtr-console xtr-dependency-injection`: the bundle needs the container
    installed beside it, never as an extra. Add the `trio` extra to run on trio, and install
    xtr-logging beside it for console log handlers that follow each command's verbosity.
-2. **Activate** — add `ConsoleBundle: {"all": True}` to `BUNDLES` in `<app>/bundles.py`:
+2. **Activate** — add `ConsoleBundle: {"all": True}` to `BUNDLES` in `<app>/config/bundles.py`:
 
    ```python
-   # <app>/bundles.py
+   # <app>/config/bundles.py
    from xtr_console.bundle import ConsoleBundle
 
    BUNDLES = {ConsoleBundle: {"all": True}}
@@ -281,7 +281,7 @@ make.
    version:
 
    ```python
-   # <app>/config/console.py
+   # <app>/config/packages/console.py
    from xtr_dependency_injection import configure
 
    from xtr_console.bundle import ConsoleConfig
@@ -303,7 +303,7 @@ make.
 8. **Check** — `<script> debug:bundles` runs and shows `console` as `listed` and `active`. The
    bundle also ships `debug:config [bundle]` and `debug:container [--tag TAG]`.
 9. **Remove** — drop the `BUNDLES` entry, the entry point and its script, delete
-   `<app>/config/console.py`, then `uv remove xtr-console`.
+   `<app>/config/packages/console.py`, then `uv remove xtr-console`.
 
 ## Errors
 

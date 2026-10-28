@@ -6,7 +6,7 @@
 "xtr_console.bundle:ConsoleBundle" = { all = true }
 
 # No [files]: configuring is optional. With none the application is named after
-# the kernel and has no version; one that sets them writes config/console.py
+# the kernel and has no version; one that sets them writes config/packages/console.py
 # itself.
 
 # No [env]: nothing is required. SHELL_VERBOSITY, where it is set, is the

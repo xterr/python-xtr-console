@@ -48,7 +48,7 @@ class DebugBundlesCommand:
             io.newline()
             io.section("Installed, not active")
             io.table(("Name", "Class"), left_out)
-            io.note("List a bundle in the application's bundles.py to activate it.")
+            io.note("List a bundle in the application's config/bundles.py to activate it.")
         if advertised.unusable:
             io.newline()
             io.section("Advertised, could not be loaded")
