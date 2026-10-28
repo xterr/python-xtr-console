@@ -433,6 +433,14 @@ async def test_a_value_the_option_refuses_is_invalid(
 
 
 @pytest.mark.anyio
+async def test_a_marked_flag_has_no_negative_form_unless_given_one(
+    parser: ApplicationTester,
+) -> None:
+    assert await parse(parser, "options", "--name", "x", "--no-force") == ExitCode.INVALID
+    assert "Unknown option" in parser.error_display
+
+
+@pytest.mark.anyio
 async def test_an_environment_variable_fills_an_option_left_out(
     parser: ApplicationTester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -635,6 +643,44 @@ async def test_an_argument_marker_shows_in_help(parser: ApplicationTester, shown
     _ = await parse(parser, "marked", "--help")
 
     assert shown in parser.display
+
+
+@as_command("documented", registry=PARSED)
+def documented_command(
+    source: Annotated[str, Argument(name="SRC")] = "",
+    *,
+    label: Annotated[str | None, Option(alias="-l")] = None,
+    note: Annotated[str, Option(help="The note, from Option.")] = "",
+) -> int:
+    """Take parameters fine-tuned by a marker, each described here.
+
+    Args:
+        source: Where from, in the docstring.
+        label: The label, in the docstring.
+        note: The note, in the docstring.
+    """
+    del source, label, note
+    return 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "described", ["Where from, in the docstring.", "The label, in the docstring."]
+)
+async def test_a_marker_without_help_keeps_the_docstrings_description(
+    parser: ApplicationTester, described: str
+) -> None:
+    _ = await parse(parser, "documented", "--help")
+
+    assert described in parser.display
+
+
+@pytest.mark.anyio
+async def test_help_on_a_marker_wins_over_the_docstring(parser: ApplicationTester) -> None:
+    _ = await parse(parser, "documented", "--help")
+
+    assert "The note, from Option." in parser.display
+    assert "The note, in the docstring." not in parser.display
 
 
 def test_an_option_marker_on_an_argument_is_refused() -> None:

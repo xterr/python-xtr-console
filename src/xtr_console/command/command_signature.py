@@ -239,35 +239,40 @@ def _for_parser(parameter: inspect.Parameter) -> inspect.Parameter:
 
 
 def _parser_setting(item: object) -> object:
-    """Translate one marker into the parser's settings; leave anything else as it is."""
+    """Translate one marker into the parser's settings; leave anything else as it is.
+
+    Only what the marker sets is handed over. The parser applies every setting it is
+    given, ``None`` included, over what it would use otherwise: an unset ``help`` would
+    hide the docstring's ``Args:`` entry, an unset ``negative`` would give a flag the
+    ``--no-`` form the application leaves off.
+    """
+    if not isinstance(item, (Argument, Option)):
+        return item
+    settings = [
+        Parameter(name=item.name) if item.name is not None else None,
+        Parameter(help=item.help) if item.help is not None else None,
+        Parameter(env_var=item.env_var) if item.env_var is not None else None,
+        (
+            Parameter(validator=_parser_validator(item.validator))
+            if item.validator is not None
+            else None
+        ),
+    ]
     if isinstance(item, Option):
-        return Parameter(
-            name=item.name,
-            alias=item.aliases or None,
-            help=item.help,
-            env_var=item.env_var,
-            negative=item.negative,
-            count=True if item.count else None,
-            validator=_parser_validator(item.validator),
-        )
-    if isinstance(item, Argument):
-        return Parameter(
-            name=item.name,
-            help=item.help,
-            env_var=item.env_var,
-            validator=_parser_validator(item.validator),
-        )
-    return item
+        settings += [
+            Parameter(alias=item.aliases) if item.aliases else None,
+            Parameter(negative=item.negative) if item.negative is not None else None,
+            Parameter(count=True) if item.count else None,
+        ]
+    return Parameter.combine(*settings)
 
 
-def _parser_validator(validator: Validator | None) -> tuple[Callable[[object, object], None], ...]:
+def _parser_validator(validator: Validator) -> tuple[Callable[[object, object], None], ...]:
     """Adapt ``validator`` — called with the value — to the parser's ``(type, value)`` shape.
 
     ``None`` never reaches it: the parser hands over the default of an ``X | None``
     parameter left out, and there is nothing to validate there.
     """
-    if validator is None:
-        return ()
     check = cast("Callable[[object], object]", validator)
 
     def validate(type_: object, value: object) -> None:
