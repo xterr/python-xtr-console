@@ -605,9 +605,9 @@ Everything adding this package to an application on
 - **Install** — `uv add xtr-console xtr-dependency-injection`: the bundle needs the container
   installed beside it, never as an extra. Add `trio` to run commands on trio, and install
   xtr-logging beside it for console handlers that follow each command's verbosity.
-- **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* step below: it lists
-  `ConsoleBundle`. It writes no config file or environment; it prints the *Entry point* step, which
-  a recipe cannot make for you.
+- **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* and *Ignore* steps below: it
+  lists `ConsoleBundle` and ignores `/var/`. It writes no config file or environment; it prints the
+  *Entry point* step, which a recipe cannot make for you.
 - **Activate** — `ConsoleBundle: {"all": True}` in `BUNDLES` in `<app>/config/bundles.py`, imported
   from `xtr_console.bundle`.
 - **Entry point** — `<app>/__main__.py` running `raise SystemExit(kernel.run(console))`, with
@@ -618,7 +618,8 @@ Everything adding this package to an application on
   and has no version. `<app>/config/packages/console.py`, a `@configure` function returning
   `ConsoleConfig`, sets them — see [Kernel / bundle](#kernel--bundle).
 - **Environment** — nothing required; `SHELL_VERBOSITY` sets the starting verbosity.
-- **Ignore** — nothing.
+- **Ignore** — `var/`: `cache:warmup` and `cache:clear` write under `kernel.cache_dir`,
+  `var/cache/<environment>` in the project, creating it when it is missing.
 - **Remove** — drop the `BUNDLES` entry, the entry point and its script, delete
   `<app>/config/packages/console.py`, then `uv remove xtr-console`.
 - **Check** — `<script> debug:bundles` runs, and shows `console` as `listed` and `active`.
@@ -690,6 +691,16 @@ The bundle also ships three debug commands the kernel's report drives:
 | `debug:bundles` | Every bundle the kernel considered — source, state, class, required peers — then every installed bundle the application left out |
 | `debug:config [bundle]` | Every bundle's resolved config, or one when named |
 | `debug:container [--tag TAG]` | Every compiled definition, or the ones tagged `TAG` |
+
+And two that run the kernel's cache warmers and clearers on `kernel.cache_dir`
+(`var/cache/<environment>`). The kernel already warms a cold cache once when it boots; these run
+the warmers on demand — as a deploy step, say — and record the cache warm, so the next start skips
+them:
+
+| Command | What it does |
+| --- | --- |
+| `cache:warmup [--no-optional-warmers]` | Creates the cache directory and runs every cache warmer, the optional ones too unless told not to |
+| `cache:clear [--no-warmup] [--no-optional-warmers]` | Runs every cache clearer, removes the cache directory, then warms it up again unless told not to |
 
 Without a container, everything above this section still works — a command taking only
 command-line parameters and a [`ConsoleStyle`](#writing-output) runs unchanged. A command

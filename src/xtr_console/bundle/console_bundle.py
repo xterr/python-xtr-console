@@ -85,6 +85,7 @@ class ConsoleBundle(Bundle[ConsoleConfig]):
         has_logging = bundle_active(builder, "logging")
         _ = services.set(_application_factory(has_logging=has_logging))
         services.load("xtr_console.bundle.debug_commands")
+        services.load("xtr_console.bundle.cache_commands")
 
 
 def _application_factory(*, has_logging: bool) -> Callable[..., Application]:

@@ -300,8 +300,12 @@ make.
    scope of its own, so a `lifetime="scoped"` dependency lives for that run. A command needing a
    container with none wired raises `MissingContainerError`.
 7. **Environment** — nothing required; `SHELL_VERBOSITY` sets the starting verbosity.
-8. **Check** — `<script> debug:bundles` runs and shows `console` as `listed` and `active`. The
+8. **Ignore** — `/var/` in `.gitignore` (`recipes:sync` adds it): the cache commands write
+   `var/cache/<environment>`, creating it when it is missing.
+9. **Check** — `<script> debug:bundles` runs and shows `console` as `listed` and `active`. The
    bundle also ships `debug:config [bundle]` and `debug:container [--tag TAG]`.
+   `cache:warmup [--no-optional-warmers]` and `cache:clear [--no-warmup]` run the kernel's
+   cache warmers and clearers on `kernel.cache_dir`.
 9. **Remove** — drop the `BUNDLES` entry, the entry point and its script, delete
    `<app>/config/packages/console.py`, then `uv remove xtr-console`.
 

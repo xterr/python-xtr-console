@@ -13,7 +13,8 @@
 # verbosity a command starts at.
 
 [gitignore]
-lines = []
+# cache:warmup and cache:clear write under kernel.cache_dir, var/cache/<environment>.
+lines = ["/var/"]
 
 [notes]
 steps = [
