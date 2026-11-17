@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+import signal
 import sys
-from contextlib import AsyncExitStack
+import threading
+from contextlib import AsyncExitStack, contextmanager
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast, final
 
 from cyclopts import App, Group, Parameter
@@ -28,7 +30,8 @@ from .style.exception_renderer import render_exception
 from .verbosity import SHELL_VERBOSITY, Verbosity
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Sequence
+    from collections.abc import Awaitable, Callable, Generator, Sequence
+    from types import FrameType
 
     from rich.padding import Padding
 
@@ -46,6 +49,9 @@ Hook: TypeAlias = "Callable[[], Awaitable[None] | None]"
 
 ConfigureHook: TypeAlias = "Callable[[ConsoleStyle], Awaitable[None] | None]"
 """Run with a command's style, its global options applied; sync or async."""
+
+# What a shell reports for a process SIGTERM ended: 128 plus the signal's number.
+_TERMINATED: Final = 143
 
 _THEME: Final = {
     "cyclopts.border": "yellow",
@@ -319,25 +325,40 @@ class Application:
         Every shutdown hook runs, in the order added, once startup has begun —
         whether a startup hook, the command or another shutdown hook raised.
         Whatever raised is one failure, each error chained to the one before.
+
+        A SIGTERM cancels the command, so its units of work and transports
+        close as they would on any error; the shutdown hooks still run, and
+        the exit code is 143, what a shell reports for a process the signal
+        ended. The previous handler is back as soon as the signal arrives, so
+        a second SIGTERM ends a command stuck where a cancellation cannot
+        reach — a question waiting for an answer.
         """
-        try:
-            async with AsyncExitStack() as shutdown:
-                for hook in reversed(self._shutdown):
-                    _ = shutdown.push_async_callback(_call, hook)
-                for configure in self._configure_hooks:
-                    configured = configure(style)
-                    if inspect.isawaitable(configured):
-                        await configured
-                for hook in self._startup:
-                    await _call(hook)
-                return _exit_code(
-                    command, await self._invoker.invoke(command, signature, arguments)
-                )
-        except Exception as error:
-            if not self._catch_exceptions:
-                raise
-            render_exception(error, style)
-            return ExitCode.FAILURE
+        with _cancelled_on_sigterm() as terminated:
+            try:
+                async with AsyncExitStack() as shutdown:
+                    for hook in reversed(self._shutdown):
+                        _ = shutdown.push_async_callback(_call, hook)
+                    for configure in self._configure_hooks:
+                        configured = configure(style)
+                        if inspect.isawaitable(configured):
+                            await configured
+                    for hook in self._startup:
+                        await _call(hook)
+                    return _exit_code(
+                        command, await self._invoker.invoke(command, signature, arguments)
+                    )
+            except asyncio.CancelledError:
+                if not terminated.is_set():
+                    raise
+                task = asyncio.current_task()
+                if task is not None:
+                    _ = task.uncancel()
+                return _TERMINATED
+            except Exception as error:
+                if not self._catch_exceptions:
+                    raise
+                render_exception(error, style)
+                return ExitCode.FAILURE
 
     def _header(self) -> str:
         name = f"[green]{escape(self._name)}[/green]"
@@ -382,6 +403,38 @@ async def _call(hook: Hook) -> None:
     result = hook()
     if inspect.isawaitable(result):
         await result
+
+
+@contextmanager
+def _cancelled_on_sigterm() -> Generator[threading.Event, None, None]:
+    """Cancel the running task on SIGTERM while the block runs; say whether it did.
+
+    Installed with ``signal.signal`` rather than the loop's own handler, so a
+    command that installs one of its own — a worker stopping between
+    messages — saves and puts back this one, and its handler wins while it
+    runs. Only where a handler can be installed: the main thread, inside an
+    asyncio task.
+    """
+    terminated = threading.Event()
+    task = asyncio.current_task() if _loop_running() and not _trio_running() else None
+    if task is None or threading.current_thread() is not threading.main_thread():
+        yield terminated
+        return
+    loop = task.get_loop()
+    previous = signal.getsignal(signal.SIGTERM)
+
+    def on_sigterm(signum: int, frame: FrameType | None) -> None:
+        del signum, frame
+        _ = signal.signal(signal.SIGTERM, previous)
+        terminated.set()
+        _ = loop.call_soon_threadsafe(task.cancel)
+
+    _ = signal.signal(signal.SIGTERM, on_sigterm)
+    try:
+        yield terminated
+    finally:
+        if signal.getsignal(signal.SIGTERM) is on_sigterm:
+            _ = signal.signal(signal.SIGTERM, previous)
 
 
 def _exit_code(command: CommandDescriptor, result: object) -> int:

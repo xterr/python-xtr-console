@@ -23,6 +23,9 @@ __all__ = ["CacheClearCommand", "CacheWarmupCommand"]
 # keeps the declaration out of the process-wide one a container-less app reads.
 _CACHE_REGISTRY = CommandsLocator()
 
+_LOCK_FILE = ".warmed.lock"
+"""The warm-up lock file, held while the cache is cleared and so kept in place."""
+
 
 @as_command("cache:clear", registry=_CACHE_REGISTRY)
 @final
@@ -57,14 +60,17 @@ class CacheClearCommand:
         """
         io.text(f"Clearing the cache for the {_described(kernel)}")
         cache, build = Path(cache_dir), Path(build_dir)
-        if build != cache:
-            await clearer.clear(build)
-        await clearer.clear(cache)
-        _remove(cache, build)
+        # One lock across the clear, the removal and the warm-up: a process
+        # booting meanwhile waits rather than warming a directory being removed.
+        async with warmed.lock():
+            if build != cache:
+                await clearer.clear(build)
+            await clearer.clear(cache)
+            _remove_contents(cache, build)
 
-        if not no_warmup:
-            io.text("Warming up the cache")
-            await _warm_up(warmer, warmed, cache, build, optional=not no_optional_warmers)
+            if not no_warmup:
+                io.text("Warming up the cache")
+                await _warm_up_held(warmer, warmed, cache, build, optional=not no_optional_warmers)
 
         io.success(f"Cache for the {_described(kernel)} was successfully cleared.")
         return ExitCode.SUCCESS
@@ -118,22 +124,42 @@ async def _warm_up(
     Under the same lock the kernel warms under at boot, so a process starting
     meanwhile waits for this warm-up rather than running its own.
     """
-    with warmed.lock():
-        _create(build_dir)
-        if optional:
-            warmer.enable_optional_warmers()
-        await warmer.warm_up(cache_dir, build_dir)
-        warmed.mark_fresh()
+    async with warmed.lock():
+        await _warm_up_held(warmer, warmed, cache_dir, build_dir, optional=optional)
+
+
+async def _warm_up_held(
+    warmer: CacheWarmerAggregate,
+    warmed: WarmedCache,
+    cache_dir: Path,
+    build_dir: Path,
+    *,
+    optional: bool,
+) -> None:
+    """Run the warmers and record the cache warm; the caller holds the lock."""
+    _create(build_dir)
+    if optional:
+        warmer.enable_optional_warmers()
+    await warmer.warm_up(cache_dir, build_dir)
+    warmed.mark_fresh()
 
 
 def _create(directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
 
 
-def _remove(*directories: Path) -> None:
+def _remove_contents(*directories: Path) -> None:
+    """Empty each directory but its lock file, which the caller holds."""
     for directory in directories:
-        if directory.exists():
-            shutil.rmtree(directory)
+        if not directory.exists():
+            continue
+        for entry in directory.iterdir():
+            if entry.name == _LOCK_FILE:
+                continue
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
 
 
 def _described(kernel: KernelInterface) -> str:

@@ -9,6 +9,8 @@ import cyclopts
 from rich.text import Text
 from rich.traceback import Traceback
 
+from xtr_console._text import safe_str
+
 from .console_style import block
 
 if TYPE_CHECKING:
@@ -45,7 +47,7 @@ def render_exception(error: BaseException, style: ConsoleStyle) -> None:
         console.print(traceback)
         return
     for link in reversed(list(_chain(error))):
-        console.print(block("ERROR", Text(str(link) or type(link).__name__), "white on red"))
+        console.print(block("ERROR", Text(safe_str(link) or type(link).__name__), "white on red"))
         console.print()
 
 

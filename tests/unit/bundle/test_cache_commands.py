@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import fcntl
 from types import ModuleType
 from typing import TYPE_CHECKING, final
 
@@ -160,7 +162,7 @@ async def test_a_start_after_the_cache_was_warmed_runs_no_warmer(tmp_path: Path)
     assert log == []
 
 
-async def test_clear_without_warmup_leaves_no_cache_directory_until_the_next_start(
+async def test_clear_without_warmup_leaves_the_cache_cold_until_the_next_start(
     tmp_path: Path,
 ) -> None:
     await _warm(tmp_path)
@@ -169,7 +171,8 @@ async def test_clear_without_warmup_leaves_no_cache_directory_until_the_next_sta
     _, _, log = await _run(tmp_path, ["cache:clear", "--no-warmup"])
 
     assert log == ["clear test"]
-    assert not cache_dir.exists()
+    # Only the lock file the clear was held under stays: no stamp, nothing warmed.
+    assert [entry.name for entry in cache_dir.iterdir()] == [".warmed.lock"]
     await _warm(tmp_path)
 
 
@@ -177,3 +180,20 @@ def test_the_cache_commands_are_not_in_the_process_wide_registry() -> None:
     names = [command.name for command in default_registry().commands()]
 
     assert not [name for name in names if name.startswith("cache:")]
+
+
+async def test_clear_waits_for_a_warmer(tmp_path: Path) -> None:
+    # A process warming holds the lock: clearing meanwhile would remove what it writes.
+    await _warm(tmp_path)
+    cache_dir = tmp_path / "var" / "cache" / "test"
+    with (cache_dir / ".warmed.lock").open("a") as warmer:
+        fcntl.flock(warmer, fcntl.LOCK_EX)
+        clearing = asyncio.create_task(_run(tmp_path, ["cache:clear", "--no-warmup"]))
+        await asyncio.sleep(0.3)
+        assert not clearing.done()
+        assert (cache_dir / ".warmed").exists()
+        fcntl.flock(warmer, fcntl.LOCK_UN)
+        code, _, _ = await asyncio.wait_for(clearing, 5)
+
+    assert code == ExitCode.SUCCESS
+    assert not (cache_dir / ".warmed").exists()

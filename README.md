@@ -677,6 +677,11 @@ own, so a `lifetime="scoped"` `Injected[...]` is built for that run and released
 ends. When something the container cannot provide is asked for, the compile-time check names
 the command.
 
+A long-running command — a loop, a poller — holds that one scope for as long as it runs, so
+every scoped service it asks for lives that long too. Open a unit per iteration instead: inject
+`ScopeFactoryInterface` and work inside `async with scopes.unit_of_work(join=False) as unit:`,
+which gives each iteration its own scoped services and closes them when it ends.
+
 | `ConsoleConfig` field | Meaning |
 | --- | --- |
 | `name` | The application's name. `None` uses `kernel.name` |
@@ -830,6 +835,11 @@ xtr_console/
 └── integration/
     └── xtr_logging.py    xtr-logging's console handlers following each command
 ```
+
+## Upgrading
+
+What changes for an application moving to 7.0, and how to keep the old behaviour where that is
+still possible: [Upgrading to 7.0](../../UPGRADING.md#xtr-console).
 
 ## Development
 

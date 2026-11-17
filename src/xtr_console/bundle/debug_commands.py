@@ -12,7 +12,7 @@ from xtr_dependency_injection import (
 )
 from xtr_dependency_injection.bundle import advertised_bundles
 
-from xtr_console import CommandsLocator, ConsoleStyle, ExitCode, as_command
+from xtr_console import CommandsLocator, ConsoleStyle, ExitCode, as_command, escape
 
 __all__ = ["DebugBundlesCommand", "DebugConfigCommand", "DebugContainerCommand"]
 
@@ -36,7 +36,7 @@ class DebugBundlesCommand:
         An advertised entry that cannot be loaded is listed too, with what it
         said: it would otherwise be missing from both lists.
         """
-        io.console.print(kernel.report.render("bundles"))
+        io.console.print(kernel.report.render("bundles"), markup=False)
         advertised = advertised_bundles()
         considered = {bundle.qualname for bundle in kernel.report.bundles}
         left_out = tuple(
@@ -47,12 +47,12 @@ class DebugBundlesCommand:
         if left_out:
             io.newline()
             io.section("Installed, not active")
-            io.table(("Name", "Class"), left_out)
+            io.table(("Name", "Class"), _escaped(left_out))
             io.note("List a bundle in the application's config/bundles.py to activate it.")
         if advertised.unusable:
             io.newline()
             io.section("Advertised, could not be loaded")
-            io.table(("Entry point", "Error"), advertised.unusable)
+            io.table(("Entry point", "Error"), _escaped(advertised.unusable))
             io.note("Install what the package's bundle needs, or drop the package.")
         return ExitCode.SUCCESS
 
@@ -70,12 +70,13 @@ class DebugConfigCommand:
         if bundle is not None:
             configs = tuple(config for config in configs if config.bundle == bundle)
             if not configs:
-                io.error(f"No bundle named {bundle!r}")
+                io.error(f"No bundle named {escape(repr(bundle))}")
                 return ExitCode.INVALID
         for config in configs:
-            io.section(config.bundle)
-            io.text(" -> ".join(config.steps))
-            io.text(repr(config.value))
+            # Names, steps and values come from the application: printed as they are.
+            io.section(escape(config.bundle))
+            io.text(escape(" -> ".join(config.steps)))
+            io.text(escape(repr(config.value)))
             io.newline()
         return ExitCode.SUCCESS
 
@@ -94,13 +95,13 @@ class DebugContainerCommand:
     ) -> int:
         """Print the ``definitions`` section, filtered by ``tag`` when given."""
         if tag is None:
-            io.console.print(kernel.report.render("definitions"))
+            io.console.print(kernel.report.render("definitions"), markup=False)
             return ExitCode.SUCCESS
         matches = tuple(
             definition for definition in kernel.report.definitions if tag in definition.tags
         )
         if not matches:
-            io.text(f"No definition tagged {tag!r}")
+            io.text(f"No definition tagged {escape(repr(tag))}")
             return ExitCode.SUCCESS
         rows = tuple(
             (
@@ -111,8 +112,15 @@ class DebugContainerCommand:
             )
             for definition in matches
         )
-        io.table(("Service", "Provider", "Kind", "Lifetime"), rows)
+        io.table(("Service", "Provider", "Kind", "Lifetime"), _escaped(rows))
         return ExitCode.SUCCESS
+
+
+def _escaped(
+    rows: tuple[tuple[str, ...], ...] | list[tuple[str, str]],
+) -> tuple[tuple[str, ...], ...]:
+    """Return ``rows`` with every cell escaped, since table cells are markup."""
+    return tuple(tuple(escape(cell) for cell in row) for row in rows)
 
 
 def _service_name(key: ServiceKey) -> str:

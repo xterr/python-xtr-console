@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import signal
+import subprocess
 import sys
 from types import SimpleNamespace
-from typing import cast, final
+from typing import TYPE_CHECKING, cast, final
 
 import pytest
 
@@ -26,6 +28,10 @@ from xtr_console import (
     as_command,
     default_registry,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from typing import IO
 
 pytestmark = pytest.mark.anyio
 
@@ -1039,3 +1045,59 @@ async def test_a_global_flag_joined_to_an_option_is_its_value(
 
     assert code == ExitCode.SUCCESS
     assert "-q" in tester.display
+
+
+_SLEEPING_APPLICATION = """
+import asyncio, sys
+from xtr_console import Application, CommandsLocator, ConsoleStyle, as_command
+
+registry = CommandsLocator()
+
+@as_command("wait", registry=registry)
+async def wait(io: ConsoleStyle) -> int:
+    print("ready", flush=True)
+    try:
+        await asyncio.sleep(30)
+    except asyncio.CancelledError:
+        print("cancelled", flush=True)
+        raise
+    return 0
+
+application = Application("acme", "1.2.0", commands=registry)
+application.on_shutdown(lambda: print("shutdown", flush=True))
+sys.exit(asyncio.run(application.run_async(["wait"])))
+"""
+
+
+@pytest.mark.skipif(
+    not hasattr(signal, "SIGTERM") or sys.platform == "win32", reason="POSIX signals"
+)
+def test_sigterm_cancels_the_command_and_exits_143(tmp_path: Path) -> None:
+    script = tmp_path / "app.py"
+    _ = script.write_text(_SLEEPING_APPLICATION)
+    process: subprocess.Popen[str] = subprocess.Popen(
+        [sys.executable, str(script)], stdout=subprocess.PIPE, text=True
+    )
+    stdout = cast("IO[str]", process.stdout)
+    assert stdout.readline().strip() == "ready"
+
+    process.send_signal(signal.SIGTERM)
+    output, _ = process.communicate(timeout=20)
+
+    assert process.returncode == 143
+    assert output.split() == ["cancelled", "shutdown"]
+
+
+async def test_a_command_run_puts_the_previous_sigterm_handler_back(
+    tester: ApplicationTester, registry: CommandsLocator
+) -> None:
+    @as_command("noop", registry=registry)
+    async def noop(io: ConsoleStyle) -> int:
+        del io
+        return 0
+
+    del noop
+    before = signal.getsignal(signal.SIGTERM)
+
+    assert await tester.execute(["noop"]) == ExitCode.SUCCESS
+    assert signal.getsignal(signal.SIGTERM) is before
