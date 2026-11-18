@@ -223,8 +223,8 @@ def test_a_typing_optional_style_is_still_the_style() -> None:
         del io
         return 0
 
-    # Optional[...] has its own origin before Python 3.14; spelled as a string
-    # so the deprecated name is evaluated, not imported.
+    # The Optional[...] spelling, written as a string so the deprecated name is
+    # evaluated, not imported.
     command.__annotations__ = {"io": "typing.Optional[ConsoleStyle]", "return": "int"}
     signature = signature_of(command)
 

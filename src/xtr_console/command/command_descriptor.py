@@ -6,7 +6,7 @@ import inspect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, TypeAlias, cast
+from typing import Final, cast
 
 from xtr_console.exception import (
     CommandSignatureError,
@@ -16,7 +16,7 @@ from xtr_console.exception import (
 
 __all__ = ["CommandDescriptor", "CommandTarget", "call_of", "default_name_of", "function_of"]
 
-CommandTarget: TypeAlias = Callable[..., object] | type
+type CommandTarget = Callable[..., object] | type
 """A command function, or a class whose instances are the command."""
 
 _NAMESPACE_SEPARATOR: Final = ":"

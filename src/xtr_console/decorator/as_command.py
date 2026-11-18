@@ -17,7 +17,7 @@ runs::
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, TypeVar, overload
+from typing import TYPE_CHECKING, overload
 
 from xtr_console.command.command_descriptor import CommandDescriptor, default_name_of
 from xtr_console.command.commands_declared_on import COMMANDS_ATTRIBUTE, commands_declared_on
@@ -33,18 +33,16 @@ __all__ = ["as_command"]
 
 # A command returns its exit code: a type checker refuses, where it is
 # declared, a function or a class whose call returns anything but an int.
-CommandT = TypeVar(
-    "CommandT",
-    bound="Callable[..., int | Awaitable[int]] | type[CommandCallable]",
-)
 
 
 @overload
-def as_command(target: CommandT, /) -> CommandT: ...
+def as_command[CommandT: "Callable[..., int | Awaitable[int]] | type[CommandCallable]"](
+    target: CommandT, /
+) -> CommandT: ...
 
 
 @overload
-def as_command(
+def as_command[CommandT: "Callable[..., int | Awaitable[int]] | type[CommandCallable]"](
     name: str | None = ...,
     /,
     *,
@@ -55,7 +53,7 @@ def as_command(
 ) -> Callable[[CommandT], CommandT]: ...
 
 
-def as_command(
+def as_command[CommandT: "Callable[..., int | Awaitable[int]] | type[CommandCallable]"](
     target_or_name: CommandT | str | None = None,
     /,
     *,

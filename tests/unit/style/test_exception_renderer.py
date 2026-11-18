@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from io import StringIO
-
-from typing_extensions import override
+from typing import override
 
 from xtr_console import ConsoleStyle
 from xtr_console.style.exception_renderer import render_exception

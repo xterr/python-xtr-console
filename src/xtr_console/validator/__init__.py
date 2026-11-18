@@ -8,12 +8,12 @@ value of an ``X | None`` parameter left out.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Never, TypeAlias
+from typing import Never
 
 from .range import Range
 
 __all__ = ["Range", "Validator"]
 
-Validator: TypeAlias = Callable[[Never], object]
+type Validator = Callable[[Never], object]
 """Any one-argument callable: it receives the converted value, and raises ``ValueError``
 to refuse it. What it returns is ignored."""

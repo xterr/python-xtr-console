@@ -14,10 +14,11 @@ logging peer names a type imported inside a function, which the container
 could not resolve from a string annotation.
 """
 
-from collections.abc import Callable
-from typing import final
+from collections.abc import (
+    Callable,  # noqa: TC003 — read when the container evaluates the annotations
+)
+from typing import final, override
 
-from typing_extensions import override
 from xtr_dependency_injection import (
     Bundle,
     ContainerBuilder,
@@ -29,7 +30,9 @@ from xtr_dependency_injection import (
     bundle_active,
     required_bundle,
 )
-from xtr_service_contracts import ContainerInterface
+from xtr_service_contracts import (
+    ContainerInterface,  # noqa: TC002 — read when the container evaluates the annotations
+)
 
 from xtr_console.application import Application
 from xtr_console.command import (
@@ -91,7 +94,9 @@ class ConsoleBundle(Bundle[ConsoleConfig]):
 def _application_factory(*, has_logging: bool) -> Callable[..., Application]:
     """Return the :class:`Application` factory, wired for logging when relevant."""
     if has_logging:
-        from xtr_logging import LoggerFactory  # noqa: PLC0415 — optional peer.
+        from xtr_logging import (  # noqa: PLC0415 — optional peer
+            LoggerFactory,  # noqa: TC002 — read when the container evaluates the annotations
+        )
 
         # Optional peer, imported only when logging is active.
         from xtr_console.integration.xtr_logging import follow  # noqa: PLC0415 — optional peer

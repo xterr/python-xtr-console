@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, cast, final
-
-from typing_extensions import override
+from typing import TYPE_CHECKING, cast, final, override
 
 from xtr_console.exception import CommandSignatureError, MissingContainerError
 

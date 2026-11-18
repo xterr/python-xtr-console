@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 import fcntl
 from types import ModuleType
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, final, override
 
 import pytest
-from typing_extensions import override
 from xtr_dependency_injection import (
     Bundle,
     CacheClearerInterface,

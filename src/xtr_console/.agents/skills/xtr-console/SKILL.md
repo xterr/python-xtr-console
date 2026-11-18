@@ -89,6 +89,8 @@ Positional (before the bare `*`): `source: Path` is required, `target: Path | No
 optional, `*files: Path` collects any number. Options (after it): `name: str` is a required
 `--name`, `ratio: float = 0.5` is `--ratio 1.5`, `force: bool = False` is a bare `--force` flag,
 `tags: list[str] | None = None` repeats, `Literal[...]` and `Enum` become choices.
+A bare `-` reaches a text or path argument or option as `"-"` (`Path("-")`): read standard input
+from it.
 
 Fine-tune with an `Argument` or `Option` marker under `Annotated`:
 

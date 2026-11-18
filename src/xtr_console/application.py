@@ -9,7 +9,7 @@ import signal
 import sys
 import threading
 from contextlib import AsyncExitStack, contextmanager
-from typing import TYPE_CHECKING, Final, Literal, TypeAlias, cast, final
+from typing import TYPE_CHECKING, Final, Literal, cast, final
 
 from cyclopts import App, Group, Parameter
 from cyclopts.exceptions import CycloptsError, MissingArgumentError
@@ -19,6 +19,7 @@ from rich.markup import escape
 from rich.text import Text
 
 from .command import CommandSelection, CommandSignature, DefaultCommandInvoker, default_registry
+from .command._standard_input import restored, with_standard_input
 from .command.command_descriptor import function_of
 from .exception import ConsoleError, EventLoopRunningError, InvalidCommandResultError
 from .exit_code import ExitCode
@@ -44,10 +45,10 @@ if TYPE_CHECKING:
 
 __all__ = ["Application", "ConfigureHook", "Hook"]
 
-Hook: TypeAlias = "Callable[[], Awaitable[None] | None]"
+type Hook = "Callable[[], Awaitable[None] | None]"
 """Run before or after a command; sync or async."""
 
-ConfigureHook: TypeAlias = "Callable[[ConsoleStyle], Awaitable[None] | None]"
+type ConfigureHook = "Callable[[ConsoleStyle], Awaitable[None] | None]"
 """Run with a command's style, its global options applied; sync or async."""
 
 # What a shell reports for a process SIGTERM ended: 128 plus the signal's number.
@@ -171,8 +172,9 @@ class Application:
         app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
+        tokens = with_standard_input(app, selection.tokens)
         try:
-            code = cast("int", app(selection.tokens, exit_on_error=False))
+            code = cast("int", app(tokens, exit_on_error=False))
         except CycloptsError:
             return ExitCode.INVALID
         except SystemExit as stop:
@@ -197,8 +199,9 @@ class Application:
         app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
+        tokens = with_standard_input(app, selection.tokens)
         try:
-            code = cast("int", await app.run_async(selection.tokens, exit_on_error=False))
+            code = cast("int", await app.run_async(tokens, exit_on_error=False))
         except CycloptsError:
             return ExitCode.INVALID
         except SystemExit as stop:
@@ -300,10 +303,14 @@ class Application:
         the style and anything a container supplies are added on the way in.
         What the command returns goes back to the parser, which reads the
         exit code from it.
+
+        A bare ``-`` the command line passed reaches the command as ``-``: see
+        :mod:`xtr_console.command._standard_input`.
         """
 
         async def entry(*args: object, **kwargs: object) -> object:
             bound = signature.command_line.bind(*args, **kwargs)
+            restored(bound)
             return await self._execute(command, signature.arguments(bound, style), signature, style)
 
         target = command.target
@@ -406,7 +413,7 @@ async def _call(hook: Hook) -> None:
 
 
 @contextmanager
-def _cancelled_on_sigterm() -> Generator[threading.Event, None, None]:
+def _cancelled_on_sigterm() -> Generator[threading.Event]:
     """Cancel the running task on SIGTERM while the block runs; say whether it did.
 
     Installed with ``signal.signal`` rather than the loop's own handler, so a

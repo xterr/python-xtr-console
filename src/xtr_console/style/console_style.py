@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final, TypeVar, final
+from typing import TYPE_CHECKING, Final, final
 
 from rich import box
 from rich.console import Console
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 __all__ = ["ConsoleStyle", "block"]
 
-T = TypeVar("T")
 
 _BLOCK_PADDING: Final = (1, 2)
 
@@ -216,7 +215,7 @@ class ConsoleStyle:
 
     # ─── progress ────────────────────────────────────────────────
 
-    def progress(
+    def progress[T](
         self, items: Iterable[T], *, total: int | None = None, description: str = "Working"
     ) -> Iterator[T]:
         """Yield every item of ``items`` while a progress bar tracks them.
@@ -290,7 +289,7 @@ class ConsoleStyle:
         self._end_scripted_answer()
         return answer
 
-    def _out_of_input(self, default: T) -> T:
+    def _out_of_input[T](self, default: T) -> T:
         """Answer with ``default``: the input ended before the question was answered."""
         self._console.print()
         return default
