@@ -187,7 +187,6 @@ def main() -> None:
         "1.2.0",
         description="Acme's operations console",
         catch_exceptions=True,
-        backend="asyncio",  # "trio" needs the trio extra
     )
     application.on_configure(tune)  # tune(io: ConsoleStyle), global options applied
     application.on_startup(connect)
@@ -256,8 +255,8 @@ async def tester() -> AsyncIterator[ApplicationTester]:
 make.
 
 1. **Install** — `uv add xtr-console xtr-dependency-injection`: the bundle needs the container
-   installed beside it, never as an extra. Add the `trio` extra to run on trio, and install
-   xtr-logging beside it for console log handlers that follow each command's verbosity.
+   installed beside it, never as an extra. Install xtr-logging beside it for console log
+   handlers that follow each command's verbosity.
 2. **Activate** — add `ConsoleBundle: {"all": True}` to `BUNDLES` in `<app>/config/bundles.py`:
 
    ```python

@@ -19,7 +19,7 @@ about how the command line is parsed, which event loop runs it, or who builds it
 session.
 
 - ⚡ **Async-native** — startup hooks, the command and shutdown hooks run on **one** event loop
-  (asyncio or trio). Sync commands work too.
+  (asyncio). Sync commands work too.
 - 🏷️ **Declared once** — `@as_command` fills a registry; a command module never imports the
   application.
 - 🧱 **Functions or classes** — a class is built only when its command runs, bare or by a
@@ -55,7 +55,6 @@ output is [rich](https://github.com/Textualize/rich).
 
 ```sh
 uv add xtr-console                           # the whole library
-uv add "xtr-console[trio]"                   # + running commands on trio instead of asyncio
 uv add xtr-console xtr-dependency-injection  # + the container, for the ConsoleBundle
 uv add xtr-logging                           # beside it: log handlers following each command's verbosity
 ```
@@ -534,7 +533,6 @@ application = Application(
     "1.2.0",  # enables --version / -V; omit to have neither
     description="Acme's operations console",
     catch_exceptions=True,  # report an escaping exception, exit FAILURE
-    backend="asyncio",  # or "trio"
 )
 application.on_configure(tune)  # tune(io: ConsoleStyle): the global options applied
 application.on_startup(connect)  # sync or async, on the command's event loop
@@ -556,7 +554,6 @@ code = await application.run_async(["user:create", "ada@example.com"])  # on the
   wants.
 - `run()` starts its own event loop, so called from async code it raises
   `EventLoopRunningError`: await `run_async()` there. Several `run_async()` calls may run concurrently on one application.
-- `backend="trio"` needs the `trio` extra.
 - Commands come from the process-wide registry by default. Pass `commands=CommandsLocator()` —
   and `registry=` to each `@as_command` — to keep a set apart, as tests usually should.
 - Running a command builds only that command, so an application with thousands of commands
@@ -608,8 +605,8 @@ Everything adding this package to an application on
 [xtr-dependency-injection](../xtr-dependency-injection) takes — and, read backwards, what removing it undoes.
 
 - **Install** — `uv add xtr-console xtr-dependency-injection`: the bundle needs the container
-  installed beside it, never as an extra. Add `trio` to run commands on trio, and install
-  xtr-logging beside it for console handlers that follow each command's verbosity.
+  installed beside it, never as an extra. Install xtr-logging beside it for console handlers
+  that follow each command's verbosity.
 - **Recipe** — `uv run xtr-recipes recipes:sync` does the *Activate* and *Ignore* steps below: it
   lists `ConsoleBundle` and ignores `/var/`. It writes no config file or environment; it prints the
   *Entry point* step, which a recipe cannot make for you.

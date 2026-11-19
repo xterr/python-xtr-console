@@ -4,7 +4,6 @@ import os
 import signal
 import subprocess
 import sys
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast, final
 
 import pytest
@@ -993,30 +992,6 @@ async def test_chained_errors_are_reported_cause_first(registry: CommandsLocator
 async def test_run_refuses_to_start_a_loop_inside_a_running_one(registry: CommandsLocator) -> None:
     with pytest.raises(EventLoopRunningError):
         _ = Application("acme", commands=registry).run([])
-
-
-def test_run_refuses_to_start_a_loop_inside_a_running_trio_one(
-    registry: CommandsLocator, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    inside_a_task = SimpleNamespace(lowlevel=SimpleNamespace(current_task=object))
-    monkeypatch.setitem(sys.modules, "trio", inside_a_task)
-
-    with pytest.raises(EventLoopRunningError):
-        _ = Application("acme", commands=registry).run([])
-
-
-def test_run_starts_a_loop_when_trio_is_imported_but_not_running(
-    registry: CommandsLocator, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def outside_a_task() -> object:
-        raise RuntimeError
-
-    monkeypatch.setitem(
-        sys.modules, "trio", SimpleNamespace(lowlevel=SimpleNamespace(current_task=outside_a_task))
-    )
-    monkeypatch.delenv(SHELL_VERBOSITY, raising=False)  # run() writes it back
-
-    assert Application("acme", commands=registry).run(["list"]) == ExitCode.SUCCESS
 
 
 async def test_an_option_losing_its_value_to_a_global_flag_says_how_to_pass_it(

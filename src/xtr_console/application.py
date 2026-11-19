@@ -9,7 +9,7 @@ import signal
 import sys
 import threading
 from contextlib import AsyncExitStack, contextmanager
-from typing import TYPE_CHECKING, Final, Literal, cast, final
+from typing import TYPE_CHECKING, Final, cast, final
 
 from cyclopts import App, Group, Parameter
 from cyclopts.exceptions import CycloptsError, MissingArgumentError
@@ -82,7 +82,6 @@ class Application:
     """
 
     __slots__ = (
-        "_backend",
         "_catch_exceptions",
         "_commands",
         "_configure_hooks",
@@ -94,7 +93,7 @@ class Application:
         "_version",
     )
 
-    def __init__(  # noqa: PLR0913 — settings, all optional, all by keyword but the name.
+    def __init__(
         self,
         name: str = "console",
         version: str | None = None,
@@ -102,7 +101,6 @@ class Application:
         description: str | None = None,
         commands: CommandsLocatorInterface | None = None,
         catch_exceptions: bool = True,
-        backend: Literal["asyncio", "trio"] = "asyncio",
     ) -> None:
         """Configure the application; nothing is parsed or built until it runs."""
         self._name = name
@@ -110,7 +108,6 @@ class Application:
         self._description = description
         self._commands = commands if commands is not None else default_registry()
         self._catch_exceptions = catch_exceptions
-        self._backend: Literal["asyncio", "trio"] = backend
         self._invoker: CommandInvokerInterface = DefaultCommandInvoker()
         self._configure_hooks: list[ConfigureHook] = []
         self._startup: list[Hook] = []
@@ -268,7 +265,6 @@ class Application:
             group_arguments=Group("Arguments", sort_key=1, theme=_THEME),
             group_parameters=Group("Options", sort_key=2, theme=_THEME),
             result_action="return_int_as_exit_code_else_zero",
-            backend=self._backend,
             console=style.console,
             error_console=style.error_console,
         )
@@ -423,7 +419,7 @@ def _cancelled_on_sigterm() -> Generator[threading.Event]:
     asyncio task.
     """
     terminated = threading.Event()
-    task = asyncio.current_task() if _loop_running() and not _trio_running() else None
+    task = asyncio.current_task() if _loop_running() else None
     if task is None or threading.current_thread() is not threading.main_thread():
         yield terminated
         return
@@ -456,27 +452,9 @@ def _exit_code(command: CommandDescriptor, result: object) -> int:
 
 
 def _loop_running() -> bool:
-    """Report whether this thread is inside an asyncio or a trio run already."""
+    """Report whether this thread is inside an asyncio run already."""
     try:
         _ = asyncio.get_running_loop()
-    except RuntimeError:
-        return _trio_running()
-    return True
-
-
-def _trio_running() -> bool:
-    """Report whether this thread is inside a trio run.
-
-    Looked up rather than imported: trio is an extra, and a run of it can
-    only be under way once something has imported it.
-    """
-    trio = sys.modules.get("trio")
-    lowlevel: object = getattr(trio, "lowlevel", None)
-    current_task: object = getattr(lowlevel, "current_task", None)
-    if not callable(current_task):
-        return False
-    try:
-        _ = current_task()
     except RuntimeError:
         return False
     return True
