@@ -695,7 +695,7 @@ The bundle also ships three debug commands the kernel's report drives:
 
 | Command | What it prints |
 | --- | --- |
-| `debug:bundles` | Every bundle the kernel considered — source, state, class, required peers — then every installed bundle the application left out |
+| `debug:bundles` | Every bundle the kernel considered — source, state, class, required peers — then every installed bundle the application left out, and every application module the scan set aside for a package not installed |
 | `debug:config [bundle]` | Every bundle's resolved config, or one when named |
 | `debug:container [--tag TAG]` | Every compiled definition, or the ones tagged `TAG` |
 

@@ -27,7 +27,7 @@ class DebugBundlesCommand:
     """List every bundle the kernel considered, and the installed ones it did not."""
 
     async def __call__(self, io: ConsoleStyle, kernel: Injected[KernelInterface]) -> int:
-        """Print the ``bundles`` section of the kernel's report, then the bundles left out.
+        """Print the kernel report's ``bundles`` section, the bundles left out, what was set aside.
 
         A bundle an installed distribution advertises but the application
         neither lists nor has required is usually a package added and never
@@ -35,6 +35,11 @@ class DebugBundlesCommand:
 
         An advertised entry that cannot be loaded is listed too, with what it
         said: it would otherwise be missing from both lists.
+
+        So is every application module the scan set aside, needing a package
+        this installation does not have: what a listed bundle that does not
+        run would have used — fixtures without their library, in production —
+        or, when not expected, a dependency missing from the installation.
         """
         io.console.print(kernel.report.render("bundles"), markup=False)
         advertised = advertised_bundles()
@@ -54,6 +59,21 @@ class DebugBundlesCommand:
             io.section("Advertised, could not be loaded")
             io.table(("Entry point", "Error"), _escaped(advertised.unusable))
             io.note("Install what the package's bundle needs, or drop the package.")
+        set_aside = kernel.report.scan.set_aside
+        if set_aside:
+            io.newline()
+            io.section("Set aside")
+            rows = tuple(
+                (
+                    entry.module,
+                    ", ".join(entry.missing),
+                    entry.through or "-",
+                    "yes" if entry.expected else "no",
+                )
+                for entry in set_aside
+            )
+            io.table(("Module", "Needs", "Through", "Expected"), _escaped(rows))
+            io.note("Nothing they define is registered. Not expected: install what is missing.")
         return ExitCode.SUCCESS
 
 
