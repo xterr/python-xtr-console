@@ -691,6 +691,12 @@ which gives each iteration its own scoped services and closes them when it ends.
 | `description` | One-line description shown in the help header |
 | `catch_exceptions` | Report an exception escaping a command and exit `FAILURE` instead of propagating |
 
+The bundle ships `about`, the project at a glance — it reads and prints, creating nothing:
+
+| Command | What it prints |
+| --- | --- |
+| `about` | The framework version, the kernel's type, environment and debug, the `kernel.cache_dir`, `kernel.build_dir`, `kernel.share_dir` and `kernel.log_dir` directories with their sizes (`n/a` when one is missing), and the Python runtime |
+
 The bundle also ships three debug commands the kernel's report drives:
 
 | Command | What it prints |

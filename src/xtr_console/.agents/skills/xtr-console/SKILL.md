@@ -304,7 +304,8 @@ make.
 8. **Ignore** — `/var/` in `.gitignore` (`recipes:sync` adds it): the cache commands write
    `var/cache/<environment>`, creating it when it is missing.
 9. **Check** — `<script> debug:bundles` runs and shows `console` as `listed` and `active`. The
-   bundle also ships `debug:config [bundle]` and `debug:container [--tag TAG]`.
+   bundle also ships `about` (the project at a glance), `debug:config [bundle]` and
+   `debug:container [--tag TAG]`.
    `cache:warmup [--no-optional-warmers]` and `cache:clear [--no-warmup]` run the kernel's
    cache warmers and clearers on `kernel.cache_dir`.
 9. **Remove** — drop the `BUNDLES` entry, the entry point and its script, delete

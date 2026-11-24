@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "cyclopts>=5.0,<6",
     "rich>=15.0",
+    "xtr-clock>=7.0,<8",
 ]
 
 # Advertises the bundle so debug:bundles can name it when installed but not listed.
