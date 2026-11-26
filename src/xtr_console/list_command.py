@@ -2,9 +2,9 @@
 
 ``app list`` prints the application's name and version line, then every
 registered command with its description, grouped by namespace prefix (the
-part before ``:``), sorted; ``app list <namespace>`` shows only that
-namespace; an unknown namespace ends the run with
-:attr:`~xtr_console.ExitCode.INVALID`.
+part before ``:``), sorted; ``app list <namespace>`` shows only the commands
+under that namespace — a nested one such as ``orm:migrations`` too; an
+unknown namespace ends the run with :attr:`~xtr_console.ExitCode.INVALID`.
 
 A user command named ``list`` (or answering to it as an alias) overrides the
 built-in.
@@ -77,12 +77,14 @@ def _make_list_command(
 
         Args:
             namespace: Only list commands whose name is prefixed by
-                ``<namespace>:``. Unknown ends the run with
+                ``<namespace>:`` — a nested namespace such as
+                ``orm:migrations`` included. Unknown ends the run with
                 :attr:`~xtr_console.ExitCode.INVALID`.
         """
         visible = tuple(command for command in listing if not command.hidden)
         if namespace is not None:
-            selected = tuple(command for command in visible if command.namespace == namespace)
+            prefix = f"{namespace}:"
+            selected = tuple(command for command in visible if command.name.startswith(prefix))
             if not selected:
                 io.error(f'There are no commands defined in the "{namespace}" namespace.')
                 return ExitCode.INVALID

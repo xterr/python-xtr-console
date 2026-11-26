@@ -149,6 +149,35 @@ async def test_list_namespace_shows_only_that_namespace(
     assert 'Available commands for the "user" namespace' in tester.display
 
 
+async def test_list_nested_namespace_shows_only_the_commands_under_it(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    @as_command("orm:migrations:migrate", registry=registry)
+    def migrate() -> int:
+        """Run the migrations."""
+        return 0
+
+    @as_command("orm:migrations:status", registry=registry)
+    def status() -> int:
+        """Show the migration status."""
+        return 0
+
+    @as_command("orm:schema:validate", registry=registry)
+    def validate() -> int:
+        """Validate the schema."""
+        return 0
+
+    del migrate, status, validate
+
+    code = await tester.execute(["list", "orm:migrations"])
+
+    assert code == ExitCode.SUCCESS
+    assert "orm:migrations:migrate" in tester.display
+    assert "orm:migrations:status" in tester.display
+    assert "orm:schema:validate" not in tester.display
+    assert 'Available commands for the "orm:migrations" namespace' in tester.display
+
+
 # ─── unknown namespace ───────────────────────────────────────────
 
 
