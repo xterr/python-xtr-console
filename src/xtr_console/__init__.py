@@ -39,6 +39,7 @@ from .exception import (
 from .exit_code import ExitCode
 from .style import ConsoleStyle, escape
 from .tester import ApplicationTester, CommandTester
+from .use_environment_options import use_environment_options
 from .validator import Range, Validator
 from .verbosity import SHELL_VERBOSITY, Verbosity
 
@@ -83,4 +84,5 @@ __all__ = [
     "as_command",
     "default_registry",
     "escape",
+    "use_environment_options",
 ]

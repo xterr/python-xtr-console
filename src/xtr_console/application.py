@@ -13,11 +13,10 @@ from typing import TYPE_CHECKING, Final, cast, final
 
 from cyclopts import App, Group, Parameter
 from cyclopts.exceptions import CycloptsError, MissingArgumentError
-from cyclopts.help import DefaultFormatter, PanelSpec, TableSpec
-from rich import box
 from rich.markup import escape
 from rich.text import Text
 
+from ._help_formatter import COMMANDS_TITLE, OPTIONS_TITLE, SectionFormatter
 from .command import CommandSelection, CommandSignature, DefaultCommandInvoker, default_registry
 from .command._standard_input import restored, with_standard_input
 from .command.command_descriptor import function_of
@@ -76,6 +75,13 @@ class Application:
     ``--silent``, ``-n``, ``--ansi``/``--no-ansi`` — anywhere on its command
     line; they set the :class:`ConsoleStyle` it writes through.
 
+    Given the ``environment`` and ``debug`` mode it runs in — what the kernel
+    behind it was built for — it takes ``-e``/``--env`` and ``--no-debug``
+    too. Those choose the kernel, so the entry point reads them before building
+    it (see :func:`~xtr_console.use_environment_options`); the application only
+    takes them off the command line, and refuses a run whose kernel was built
+    for another environment than the one asked for.
+
     With ``catch_exceptions`` on, an exception escaping a command is reported
     — its message, or with ``-v`` its traceback — and the run ends with
     :attr:`ExitCode.FAILURE`; off, it propagates, as a test usually wants.
@@ -85,7 +91,9 @@ class Application:
         "_catch_exceptions",
         "_commands",
         "_configure_hooks",
+        "_debug",
         "_description",
+        "_environment",
         "_invoker",
         "_name",
         "_shutdown",
@@ -93,7 +101,7 @@ class Application:
         "_version",
     )
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 — each argument is a separate, optional setting.
         self,
         name: str = "console",
         version: str | None = None,
@@ -101,6 +109,8 @@ class Application:
         description: str | None = None,
         commands: CommandsLocatorInterface | None = None,
         catch_exceptions: bool = True,
+        environment: str | None = None,
+        debug: bool | None = None,
     ) -> None:
         """Configure the application; nothing is parsed or built until it runs."""
         self._name = name
@@ -108,6 +118,8 @@ class Application:
         self._description = description
         self._commands = commands if commands is not None else default_registry()
         self._catch_exceptions = catch_exceptions
+        self._environment = environment
+        self._debug = debug
         self._invoker: CommandInvokerInterface = DefaultCommandInvoker()
         self._configure_hooks: list[ConfigureHook] = []
         self._startup: list[Hook] = []
@@ -165,7 +177,10 @@ class Application:
         if _loop_running():
             raise EventLoopRunningError
         style = _terminal_style()
-        selection, taken = self._configure(argv, style)
+        configured = self._configure(argv, style)
+        if configured is None:
+            return ExitCode.INVALID
+        selection, taken = configured
         app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
@@ -192,7 +207,10 @@ class Application:
         run with that code rather than leaving the process.
         """
         style = style if style is not None else _terminal_style()
-        selection, taken = self._configure(argv, style)
+        configured = self._configure(argv, style)
+        if configured is None:
+            return ExitCode.INVALID
+        selection, taken = configured
         app = self._build_or_report(style, selection.commands, taken)
         if app is None:
             return ExitCode.FAILURE
@@ -207,7 +225,7 @@ class Application:
 
     def _configure(
         self, argv: Sequence[str] | None, style: ConsoleStyle
-    ) -> tuple[CommandSelection, tuple[str, ...]]:
+    ) -> tuple[CommandSelection, tuple[str, ...]] | None:
         """Apply the global options in ``argv`` to ``style``; select from what is left.
 
         The verbosity settled on is written back to ``SHELL_VERBOSITY`` here,
@@ -219,14 +237,43 @@ class Application:
 
         The built-in ``list`` command is added unless the user declared one
         under that name (or an alias): a user's ``list`` wins.
+
+        ``None``, the reason reported, when the environment options ask for
+        another kernel than the one this application runs in.
         """
-        options = GlobalOptions.parse(list(argv) if argv is not None else sys.argv[1:])
+        options = GlobalOptions.parse(
+            list(argv) if argv is not None else sys.argv[1:],
+            environment_options=self._environment is not None,
+        )
         options.apply(style)
         os.environ[SHELL_VERBOSITY] = str(style.verbosity.shell_level)
+        refusal = self._refusal(options)
+        if refusal is not None:
+            style.error(escape(refusal))
+            return None
         commands = with_builtin_list(
             self._commands.commands(), self._name, self._version, self._description
         )
         return CommandSelection.of(commands, options.remaining), options.taken
+
+    def _refusal(self, options: GlobalOptions) -> str | None:
+        """Say why the run is refused, when ``--env`` or ``--no-debug`` was not applied.
+
+        They choose the kernel, so only the entry point can apply them; one that
+        did not would run the command against the wrong environment.
+        """
+        hint = "read the environment options before building the kernel (use_environment_options)"
+        if options.environment is not None and options.environment != self._environment:
+            return (
+                f'The environment "{options.environment}" was asked for, but the kernel was built '
+                f'for "{self._environment}": the entry point must {hint}.'
+            )
+        if options.debug is False and self._debug:
+            return (
+                "Debug mode was switched off, but the kernel runs in debug: "
+                f"the entry point must {hint}."
+            )
+        return None
 
     def _build_or_report(
         self, style: ConsoleStyle, commands: Sequence[CommandDescriptor], taken: tuple[str, ...]
@@ -254,24 +301,24 @@ class Application:
             help=self._description,
             help_format="rich",
             help_prologue=header,
-            help_formatter=_help_formatter(),
+            help_formatter=SectionFormatter(),
             help_flags=("--help", "-h"),
             version=header if self._version is not None else None,
             version_format="rich",
             version_flags=("--version", "-V") if self._version is not None else (),
             error_formatter=_error_formatter(taken),
             default_parameter=Parameter(negative=()),
-            group_commands=Group("Available commands", sort_key=1, theme=_THEME),
+            group_commands=Group(COMMANDS_TITLE, sort_key=1, theme=_THEME),
             group_arguments=Group("Arguments", sort_key=1, theme=_THEME),
-            group_parameters=Group("Options", sort_key=2, theme=_THEME),
+            group_parameters=Group(OPTIONS_TITLE, sort_key=2, theme=_THEME),
             result_action="return_int_as_exit_code_else_zero",
             console=style.console,
             error_console=style.error_console,
         )
-        options = Group("Options", sort_key=0, theme=_THEME)
+        options = Group(OPTIONS_TITLE, sort_key=0, theme=_THEME)
         for flag in ("--help", "--version") if self._version is not None else ("--help",):
             app[flag].group = (options,)
-        list_global_options(app, options)
+        list_global_options(app, options, environment=self._environment)
         namespaces: dict[str, Group] = {}
         for command in commands:
             namespace = command.namespace
@@ -371,14 +418,6 @@ class Application:
 def _terminal_style() -> ConsoleStyle:
     """Return a style on the terminal, as verbose as ``SHELL_VERBOSITY`` says."""
     return ConsoleStyle(verbosity=Verbosity.from_shell(os.environ.get(SHELL_VERBOSITY)))
-
-
-def _help_formatter() -> DefaultFormatter:
-    """Lay help out as open sections, without the boxes."""
-    return DefaultFormatter(
-        panel_spec=PanelSpec(box=box.SIMPLE, padding=(0, 0)),
-        table_spec=TableSpec(show_header=False, box=None, padding=(0, 2)),
-    )
 
 
 def _error_formatter(taken: tuple[str, ...]) -> Callable[[CycloptsError], Padding]:

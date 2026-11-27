@@ -1,10 +1,16 @@
-"""The options every command takes: how much to say, in colour or not, and whether to ask."""
+"""The options every command takes: how much to say, in colour or not, whether to ask.
+
+An application run by a kernel takes two more, read before the kernel is built:
+the environment and debug mode.
+"""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
+
+from rich.markup import escape
 
 from .exit_code import ExitCode
 from .verbosity import Verbosity
@@ -30,6 +36,9 @@ _NO_INTERACTION: Final = frozenset({"-n", "--no-interaction"})
 _ANSI: Final = frozenset({"--ansi"})
 _NO_ANSI: Final = frozenset({"--no-ansi"})
 _SWITCHES: Final = _SILENT | _QUIET | _NO_INTERACTION | _ANSI | _NO_ANSI
+_ENV: Final = frozenset({"-e", "--env"})
+_JOINED_ENV: Final = "--env="
+_NO_DEBUG: Final = "--no-debug"
 
 _HELP: Final = (
     ("--silent", (), "Do not output any message."),
@@ -41,6 +50,10 @@ _HELP: Final = (
         ("-v",),
         "Increase the verbosity of messages: -v for more, -vv for even more, -vvv to debug.",
     ),
+)
+_ENVIRONMENT_HELP: Final = (
+    ("--env", ("-e",), "The environment name."),
+    (_NO_DEBUG, (), "Switch off debug mode."),
 )
 
 
@@ -62,18 +75,27 @@ class GlobalOptions:
     """The command line without them."""
     taken: tuple[str, ...] = ()
     """The tokens read as global options, in order — to explain an option left without a value."""
+    environment: str | None = None
+    """What ``-e`` / ``--env`` named; ``None`` when left out, or not read."""
+    debug: bool | None = None
+    """``False`` for ``--no-debug``; ``None`` when left out, or not read."""
 
     @classmethod
-    def parse(cls, tokens: Sequence[str]) -> GlobalOptions:
+    def parse(cls, tokens: Sequence[str], *, environment_options: bool = False) -> GlobalOptions:
         """Take the global options out of ``tokens``.
 
         ``--silent`` wins over ``-q``, which wins over ``-v``; the most
         ``-v`` given wins among those, ``--ansi`` over ``--no-ansi``. A
         verbosity above the highest is that highest, however it is spelled:
         ``-vvvv``, ``--verbose=9`` and ``--verbose 9`` all debug.
+
+        With ``environment_options``, ``-e``/``--env`` and ``--no-debug`` are
+        taken too; the last environment given wins. An ``--env`` with no value
+        after it is left to the command line, which reports it.
         """
         seen: set[str] = set()
         level = 0
+        environment: str | None = None
         remaining: list[str] = []
         taken: list[str] = []
         index = 0
@@ -89,8 +111,14 @@ class GlobalOptions:
                 taken.extend(tokens[index : index + span])
                 index += span
                 continue
+            named = _environment(tokens, index) if environment_options else None
+            if named is not None:
+                environment, span = named
+                taken.extend(tokens[index : index + span])
+                index += span
+                continue
             index += 1
-            if token in _SWITCHES:
+            if token in _SWITCHES or (environment_options and token == _NO_DEBUG):
                 seen.add(token)
                 taken.append(token)
             else:
@@ -101,6 +129,8 @@ class GlobalOptions:
             interactive=not _given(seen, _NO_INTERACTION),
             remaining=tuple(remaining),
             taken=tuple(taken),
+            environment=environment,
+            debug=False if _NO_DEBUG in seen else None,
         )
 
     def apply(self, style: ConsoleStyle) -> None:
@@ -113,27 +143,62 @@ class GlobalOptions:
             style.interactive = False
 
 
-def list_global_options(app: App, group: Group) -> None:
+def list_global_options(app: App, group: Group, *, environment: str | None = None) -> None:
     """Show the global options in ``app``'s help, in ``group``.
 
     Listed only: they are taken out of the command line before it is parsed,
     so what is registered here never runs.
+
+    With an ``environment`` — the one the kernel was built for — the
+    environment options are listed too, that environment as the default.
     """
     for name, aliases, description in _HELP:
         _ = app.command(_listed_only, name=name, alias=aliases, group=group, help=description)
+    if environment is None:
+        return
+    for name, aliases, description in _ENVIRONMENT_HELP:
+        # Help is read as markup: the brackets would be taken for a tag.
+        shown = (
+            escape(f"{description} [default: {environment}]") if name == "--env" else description
+        )
+        _ = app.command(_listed_only, name=name, alias=aliases, group=group, help=shown)
 
 
 def is_global_flag(name: str) -> bool:
     """Tell whether the application takes ``name`` for itself, as it reads a command line.
 
     Asks the same matcher the command line is read with, so no spelling it
-    takes — ``-vvvv`` as much as ``-v`` — is missed.
+    takes — ``-vvvv`` as much as ``-v`` — is missed. The environment options
+    count wherever the application is run: a command means the same under a
+    kernel and without one.
     """
-    return _verbose_level(name) is not None or name in _SWITCHES
+    return (
+        _verbose_level(name) is not None
+        or name in _SWITCHES
+        or name in _ENV
+        or name.startswith(_JOINED_ENV)
+        or name == _NO_DEBUG
+    )
 
 
 def _listed_only() -> int:
     return ExitCode.SUCCESS
+
+
+def _environment(tokens: Sequence[str], index: int) -> tuple[str, int] | None:
+    """Return the environment named at ``index``, and how many tokens it spans.
+
+    ``None`` when the token names none: not an environment option, an empty
+    ``--env=``, or ``-e``/``--env`` with nothing after it but the end of the
+    options.
+    """
+    token = tokens[index]
+    if token.startswith(_JOINED_ENV):
+        value = token.removeprefix(_JOINED_ENV)
+        return (value, 1) if value else None
+    if token not in _ENV or index + 1 >= len(tokens) or tokens[index + 1] == _END_OF_OPTIONS:
+        return None
+    return tokens[index + 1], 2
 
 
 def _verbose(tokens: Sequence[str], index: int) -> tuple[int, int] | None:

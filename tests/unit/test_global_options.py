@@ -137,10 +137,55 @@ def test_applying_sets_the_verbosity_asked_for() -> None:
         "--verbose",
         "--verbose=2",
         "--verbose=9",
+        "-e",
+        "--env",
+        "--env=prod",
+        "--no-debug",
     ],
 )
 def test_every_flag_the_command_line_takes_is_a_global_flag(name: str) -> None:
     assert is_global_flag(name)
+
+
+@pytest.mark.parametrize(
+    ("tokens", "expected"),
+    [
+        (["-e", "prod", "about"], "prod"),
+        (["about", "--env", "prod"], "prod"),
+        (["--env=prod", "about"], "prod"),
+        (["-e", "test", "--env=prod", "about"], "prod"),
+        (["about"], None),
+    ],
+)
+def test_it_reads_the_environment_asked_for(tokens: list[str], expected: str | None) -> None:
+    options = GlobalOptions.parse(tokens, environment_options=True)
+
+    assert (options.environment, options.remaining) == (expected, ("about",))
+
+
+def test_it_reads_debug_switched_off() -> None:
+    options = GlobalOptions.parse(["about", "--no-debug"], environment_options=True)
+
+    assert (options.debug, options.remaining) == (False, ("about",))
+
+
+@pytest.mark.parametrize(
+    "tokens", [["about", "--env"], ["about", "--env="], ["about", "-e", "--", "x"]]
+)
+def test_an_environment_option_without_a_value_is_left_to_the_command_line(
+    tokens: list[str],
+) -> None:
+    options = GlobalOptions.parse(tokens, environment_options=True)
+
+    assert (options.environment, options.remaining) == (None, tuple(tokens))
+
+
+def test_the_environment_options_are_left_alone_unless_asked_for() -> None:
+    tokens = ["about", "-e", "prod", "--no-debug"]
+
+    options = GlobalOptions.parse(tokens)
+
+    assert (options.environment, options.debug, options.remaining) == (None, None, tuple(tokens))
 
 
 @pytest.mark.parametrize("name", ["-x", "--verbosity", "-vx", "--quietly", "--verbose=0"])

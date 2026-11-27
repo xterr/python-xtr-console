@@ -91,7 +91,7 @@ async def test_commands_are_grouped_under_their_namespace(
     _ = await tester.execute(["--help"])
 
     lines = [line.strip() for line in tester.display.splitlines()]
-    assert lines.index("user") > lines.index("Available commands")
+    assert lines.index("user") > lines.index("Available commands:")
     assert any(line.startswith("user:create") for line in lines[lines.index("user") :])
 
 
@@ -782,6 +782,96 @@ async def test_help_lists_the_global_options(tester: ApplicationTester) -> None:
         "-v",
     ):
         assert flag in options
+
+
+async def test_help_puts_titles_first_namespaces_one_in_and_entries_two_in(
+    registry: CommandsLocator, tester: ApplicationTester
+) -> None:
+    declare_create_user(registry)
+
+    _ = await tester.execute(["--help"])
+
+    lines = tester.display.splitlines()
+
+    def indent(first: str) -> int:
+        line = next(line for line in lines if line.split()[:1] == [first])
+        return len(line) - len(line.lstrip())
+
+    assert (indent("Options:"), indent("Available")) == (0, 0)
+    assert indent("user") == 1
+    assert (indent("--quiet"), indent("list"), indent("user:create")) == (2, 2, 2)
+
+
+def _kernel_tester(registry: CommandsLocator, *, debug: bool = True) -> ApplicationTester:
+    return ApplicationTester(
+        Application("acme", commands=registry, environment="dev", debug=debug), width=200
+    )
+
+
+def _declare_env_echo(registry: CommandsLocator) -> None:
+    @as_command("echo", registry=registry)
+    async def echo(io: ConsoleStyle, word: str = "none") -> int:
+        io.text(word)
+        return 0
+
+    del echo
+
+
+async def test_the_environment_options_are_listed_with_the_kernels_environment(
+    registry: CommandsLocator,
+) -> None:
+    tester = _kernel_tester(registry)
+
+    _ = await tester.execute(["--help"])
+
+    assert "The environment name. [default: dev]" in tester.display
+    assert "--no-debug" in tester.display
+
+
+async def test_the_environment_options_are_not_listed_without_a_kernel(
+    tester: ApplicationTester,
+) -> None:
+    _ = await tester.execute(["--help"])
+
+    assert "--env" not in tester.display
+    assert "--no-debug" not in tester.display
+
+
+async def test_the_environment_the_kernel_was_built_for_is_taken_off_the_line(
+    registry: CommandsLocator,
+) -> None:
+    _declare_env_echo(registry)
+    tester = _kernel_tester(registry, debug=False)
+
+    code = await tester.execute(["-e", "dev", "echo", "--env=dev", "--no-debug", "hello"])
+
+    assert code == ExitCode.SUCCESS, tester.error_display
+    assert tester.display.strip() == "hello"
+
+
+async def test_another_environment_than_the_kernels_is_refused(
+    registry: CommandsLocator,
+) -> None:
+    _declare_env_echo(registry)
+    tester = _kernel_tester(registry)
+
+    code = await tester.execute(["echo", "--env", "prod"])
+
+    assert code == ExitCode.INVALID
+    shown = " ".join((tester.display + tester.error_display).split())
+    assert '"prod" was asked for, but the kernel was built for "dev"' in shown
+
+
+async def test_switching_debug_off_under_a_debug_kernel_is_refused(
+    registry: CommandsLocator,
+) -> None:
+    _declare_env_echo(registry)
+    tester = _kernel_tester(registry)
+
+    code = await tester.execute(["echo", "--no-debug"])
+
+    assert code == ExitCode.INVALID
+    assert "Debug mode was switched off" in tester.display + tester.error_display
 
 
 async def test_a_quiet_help_prints_nothing(

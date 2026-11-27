@@ -139,6 +139,8 @@ def _application(
         description=config.description,
         commands=commands,
         catch_exceptions=config.catch_exceptions,
+        environment=kernel.environment,
+        debug=kernel.debug,
     )
     app.use_invoker(_BundleInvoker(container))
     return app
