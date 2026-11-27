@@ -1,6 +1,6 @@
 [project]
 name = "xtr-console"
-version = "7.3.0"
+version = "7.4.0"
 description = "Async-native console applications for Python: commands as functions or classes, declared once and wired by a container."
 readme = "README.md"
 requires-python = ">=3.14.4"
@@ -20,7 +20,7 @@ classifiers = [
 dependencies = [
     "cyclopts>=5.0,<6",
     "rich>=15.0",
-    "xtr-clock>=7.3,<8",
+    "xtr-clock>=7.4,<8",
 ]
 
 # Advertises the bundle so debug:bundles can name it when installed but not listed.
@@ -40,10 +40,10 @@ dev = [
     "pytest-cov>=7.1",
     "anyio>=4.10",
     "ty>=0.0.83",
-    "xtr-dependency-injection>=7.3,<8",
-    "xtr-logging>=7.3,<8",
-    "xtr-logging-contracts>=7.3,<8",
-    "xtr-service-contracts>=7.3,<8",
+    "xtr-dependency-injection>=7.4,<8",
+    "xtr-logging>=7.4,<8",
+    "xtr-logging-contracts>=7.4,<8",
+    "xtr-service-contracts>=7.4,<8",
 ]
 
 [build-system]
